@@ -8,9 +8,10 @@
 The herdr plugin contract as `my-herdr` relies on it. Everything here describes **herdr 0.9.1**
 (protocol 22), the current stable release and the version this plugin targets.
 
-- **[docs]** or an unmarked quote: from the official documentation pages linked below.
+- **[docs]** or unmarked: from the official documentation pages linked below, summarized in our own words; quotation marks mark the few places where herdr's exact wording is kept.
 - **[src]**: read from the herdr source, at the paths listed below.
-- **[local]**: checked against an installed herdr CLI. Nothing was installed, linked, configured, or created while checking.
+- **[local]**: checked against an installed herdr CLI.
+- **[schema]**: from `herdr api schema --json` of the installed herdr.
 
 ## Source URLs
 
@@ -30,29 +31,37 @@ The herdr plugin contract as `my-herdr` relies on it. Everything here describes 
 | example plugins | https://github.com/ogulcancelik/herdr-plugin-examples (not official; "provided as-is and are not actively maintained") |
 | source | `https://raw.githubusercontent.com/herdrdev/herdr/v0.9.1/src/app/api/plugins/{mod,runtime,env,context,manifest,panes}.rs`, `src/cli/plugin.rs`, `src/cli/pane.rs`, `src/app/popup.rs`, `src/app/custom_commands.rs`, `src/config/keybinds.rs`, `src/plugin_paths.rs`, `src/api/schema/events.rs` |
 
+[plugins]: https://raw.githubusercontent.com/herdrdev/herdr/v0.9.1/docs/next/website/src/content/docs/plugins.mdx
+[configuration]: https://raw.githubusercontent.com/herdrdev/herdr/v0.9.1/docs/next/website/src/content/docs/configuration.mdx
+[keyboard]: https://raw.githubusercontent.com/herdrdev/herdr/v0.9.1/docs/next/website/src/content/docs/keyboard.mdx
+[marketplace]: https://raw.githubusercontent.com/herdrdev/herdr/v0.9.1/docs/next/website/src/content/docs/marketplace.mdx
+[cli-reference]: https://raw.githubusercontent.com/herdrdev/herdr/v0.9.1/docs/next/website/src/content/docs/cli-reference.mdx
+[socket-api]: https://raw.githubusercontent.com/herdrdev/herdr/v0.9.1/docs/next/website/src/content/docs/socket-api.mdx
+[integrations]: https://raw.githubusercontent.com/herdrdev/herdr/v0.9.1/docs/next/website/src/content/docs/integrations.mdx
+
 
 ---
 
 ## 1. What a plugin is
 
-From the plugins page, verbatim:
+Source: [plugins page][plugins].
 
-> A plugin is a directory with a `herdr-plugin.toml` manifest and commands Herdr can launch. Herdr validates the manifest, injects runtime context, starts the declared commands, and records logs. The commands call back into Herdr through the CLI or socket when they need to do more work.
-
-> There is no separate plugin SDK or restricted command set. The entire Herdr CLI is the plugin API. Every command in the CLI reference is available to a plugin, and a plugin can run anything you can run yourself as `herdr ...`. Most plugins should call Herdr through `HERDR_BIN_PATH`, which points at the running Herdr binary.
-
-> Runtime action registration and native non-terminal plugin UI are not part of plugin v1. Actions, event hooks, panes, and link handlers are all declared in the manifest.
+- A plugin is a directory holding a `herdr-plugin.toml` manifest plus the commands herdr can launch. herdr validates the manifest, injects runtime context, starts the declared commands and records their logs. The commands call back into herdr through the CLI or the socket.
+- There is no plugin SDK and no restricted command set: the whole herdr CLI is the plugin API. A plugin can run any `herdr ...` command a user can. Most plugins should call herdr through `HERDR_BIN_PATH`, which points at the running herdr binary.
+- Plugin v1 has no runtime action registration and no native non-terminal plugin UI. Actions, event hooks, panes and link handlers are all declared in the manifest.
 
 This means:
 
 - **No UI widgets.** There are no dialogs, text inputs, or menus. The only UI a plugin gets is a terminal: a popup, overlay, split, tab, or zoomed pane running a command.
-- **No storage API.** "There is no Herdr-managed plugin storage API in v1. Plugins that need durable state should own their files or database."
+- **No storage API.** v1 has no herdr-managed plugin storage; a plugin that needs durable state owns its own files or database.
 
 ---
 
 ## 2. Manifest (`herdr-plugin.toml`)
 
 ### 2.1 Full official example (verbatim, plugins page)
+
+Source: [plugins page][plugins].
 
 ```toml
 id = "example.layout"
@@ -198,39 +207,46 @@ Field lists come from the docs plus the manifest deserializer **[src `manifest.r
 | `action` | yes | Must name an action in the same plugin, else `invalid_plugin_link_handler_action`. |
 | `platforms` | no | |
 
-### 2.3 Id rules (verbatim)
+### 2.3 Id rules
 
-> Top-level `id`, `name`, `version`, and `min_herdr_version` are required. [...] Plugin ids may use ASCII letters, digits, dot, colon, underscore, and hyphen.
+Sources: [plugins page][plugins], [CLI reference][cli-reference].
 
-> Action ids, pane ids, and link handler ids are local ids inside the plugin. They may use ASCII letters, digits, colon, underscore, and hyphen, but not dots. Each id type must be unique inside a plugin. Herdr qualifies action ids as `plugin.id.action` when it needs a globally unique name.
-
-> Local action ids cannot contain dots, so qualified ids remain unambiguous even when plugin ids contain dots. (cli-reference)
+- The top-level `id`, `name`, `version` and `min_herdr_version` are required.
+- Plugin ids may contain ASCII letters, digits, dot, colon, underscore and hyphen.
+- Action, pane and link handler ids are local to the plugin. They allow the same characters **except the dot**, and each kind of id must be unique within the plugin.
+- When herdr needs a globally unique name it qualifies an action id as `plugin.id.action`. Because local ids have no dots, the qualified id stays unambiguous even when the plugin id contains dots.
 
 **Gotcha [src `plugin_paths.rs`]: use lowercase plugin ids.** The per-plugin config and state directory names escape every byte that is not `[a-z0-9._-]` as `%XX`. An id like `My.Plugin` therefore gets a directory like `%4Dy.%50lugin`. For example, `my-herdr` or `owner.my-herdr` produce clean paths.
 
-### 2.4 Commands are argv, not shell (verbatim)
+### 2.4 Commands are argv, not shell
 
-> `command` values are argv arrays. Herdr does not run them through a shell, so there is no shell expansion unless your command starts a shell itself.
+Every `command` value is an argv array. herdr does not pass it through a shell, so nothing is shell-expanded unless the command itself starts a shell ([plugins page][plugins]).
 
-Relative plugin commands resolve from the plugin root, and command arrays preserve whitespace-only arguments. So `command = ["bash", "bin/fork-tab.sh"]` works, and so does `command = ["./bin/fork-tab.sh"]` if the file is executable.
+Relative plugin commands resolve from the plugin root, and command arrays preserve whitespace-only arguments. So `command = ["python3", "bin/my-herdr", "ping"]` works, and so does `command = ["./bin/my-herdr", "ping"]` if the file is executable.
 
-### 2.5 Build commands (verbatim)
+### 2.5 Build commands
 
-> Build commands run during GitHub `plugin install` after confirmation and before Herdr registers the plugin. If a build command fails, install aborts and the plugin is not registered. `plugin link` does not run build commands; local authors build their working tree themselves. Build commands may generate files, but changing `herdr-plugin.toml` after the install preview aborts install.
+Source: [plugins page][plugins].
 
-> Build commands are plain argv commands too, but they do not receive runtime plugin context or Herdr socket env.
+- Build commands run only during a GitHub `plugin install`, after the user confirms and before herdr registers the plugin. A failing build command aborts the install and the plugin is not registered.
+- `plugin link` never runs build commands; a local author builds the working tree by hand.
+- Build commands may generate files, but if `herdr-plugin.toml` changes after the install preview, the install aborts.
+- They are plain argv commands like the others, but get neither the runtime plugin context nor the herdr socket env.
 
 `my-herdr` has no build step, so leave out `[[build]]` entirely.
 
-### 2.6 Startup hooks (verbatim)
+### 2.6 Startup hooks
 
-> `[[startup]]` commands run once for each enabled plugin after Herdr restores the session and its API socket is ready. They run again when a new server takes over during live handoff, but not when a client attaches, config reloads, or a plugin is linked or enabled. [...] A startup failure does not stop the server.
+Source: [plugins page][plugins].
 
-> Startup hooks receive the normal runtime plugin environment and `HERDR_PLUGIN_EVENT=startup`.
+- `[[startup]]` commands run once per enabled plugin, after herdr has restored the session and its API socket is ready.
+- They run again when a new server takes over during a live handoff. They do **not** run when a client attaches, when config is reloaded, or when a plugin is linked or enabled.
+- A failing startup command does not stop the server.
+- Startup hooks get the normal runtime plugin environment plus `HERDR_PLUGIN_EVENT=startup`.
 
 ### 2.7 Event hooks
 
-From the socket API page: "Event hooks run for enabled installed plugins when Herdr emits a matching event name such as `worktree.created`."
+Per the [socket API page][socket-api], event hooks of enabled, installed plugins run whenever herdr emits an event whose name matches, such as `worktree.created`.
 
 **[src `events.rs` `PLUGIN_HOOK_EVENT_KINDS`]** lists the event names that can trigger hooks:
 
@@ -239,49 +255,30 @@ From the socket API page: "Event hooks run for enabled installed plugins when He
 - **Tab:** `tab.created`, `tab.closed`, `tab.renamed`, `tab.moved`, `tab.focused`
 - **Pane:** `pane.created`, `pane.closed`, `pane.focused`, `pane.moved`, `pane.exited`, `pane.agent_detected`, `pane.agent_status_changed`
 
-Some events can be subscribed to over the socket but do **not** fire hooks: `workspace.metadata_updated`, `pane.updated`, `pane.output_changed`/`pane.output_matched`, `pane.scroll_changed`, and `layout.updated`. The docs confirm this for one of them: "`workspace.metadata_updated` reports token changes and TTL expiry without invoking plugin event hooks."
+Some events can be subscribed to over the socket but do **not** fire hooks: `workspace.metadata_updated`, `pane.updated`, `pane.output_changed`/`pane.output_matched`, `pane.scroll_changed`, and `layout.updated`. The docs confirm this for one of them: `workspace.metadata_updated` reports token changes and TTL expiry but does not invoke plugin event hooks.
 
 Hook processes receive `HERDR_PLUGIN_EVENT=<name>` and `HERDR_PLUGIN_EVENT_JSON=<event envelope JSON>`.
 
-### 2.8 Link handlers (verbatim)
+### 2.8 Link handlers
 
-> Use `[[link_handlers]]` to route modified clicks on matching terminal URLs to a plugin action instead of opening the URL in the browser. The modified-click modifier is Control on every platform, including macOS [...]. `pattern` is a Rust regular expression matched against the clicked URL, and `action` must name an action declared by the same plugin. Link handler actions receive `invocation_source = "link_click"`, `clicked_url`, and `link_handler_id` in `HERDR_PLUGIN_CONTEXT_JSON`; shell plugins can also read `HERDR_PLUGIN_CLICKED_URL` and `HERDR_PLUGIN_LINK_HANDLER_ID`. Handlers are checked in manifest order inside each plugin.
+Source: [plugins page][plugins].
+
+- `[[link_handlers]]` sends a modified click on a matching terminal URL to a plugin action instead of opening it in the browser. The modifier is Control on every platform, macOS included.
+- `pattern` is a Rust regex matched against the clicked URL; `action` must name an action declared in the same plugin.
+- The action's `HERDR_PLUGIN_CONTEXT_JSON` carries `invocation_source = "link_click"`, `clicked_url` and `link_handler_id`. Shell plugins can read the same values from `HERDR_PLUGIN_CLICKED_URL` and `HERDR_PLUGIN_LINK_HANDLER_ID`.
+- Within a plugin, handlers are tried in manifest order.
 
 Link handlers also receive matching OSC 8 `file://` clicks.
 
-### 2.9 Suggested manifest skeleton for `my-herdr`
+### 2.9 The `my-herdr` manifest
 
-This is my own composition from the rules above, not an official example.
-
-```toml
-id = "my-herdr"                     # lowercase: clean config/state dir names
-name = "my-herdr"
-version = "0.1.0"
-min_herdr_version = "0.9.1"         # a value above the running herdr is a hard load failure
-description = "Personal herdr helpers: fork Claude session into tab, pane to tab"
-platforms = ["linux", "macos"]
-
-[[actions]]
-id = "fork-tab"
-title = "Fork Claude session into new tab"
-contexts = ["pane"]
-command = ["bash", "bin/fork-tab.sh"]
-
-[[actions]]
-id = "pane-to-tab"
-title = "Move focused pane to new tab"
-contexts = ["pane"]
-command = ["bash", "bin/pane-to-tab.sh"]
-
-# Interactive name/prompt input: a terminal popup opened by the action (see section 5)
-[[panes]]
-id = "fork-tab-prompt"
-title = "Fork Claude session"
-placement = "popup"
-width = "70%"
-height = 12
-command = ["bash", "bin/fork-tab-prompt.sh"]
-```
+`herdr-plugin.toml` at the repo root applies the rules above; read it rather than a copy here. The
+choices that follow from this section: a lowercase, dot-free `id`; `min_herdr_version = "0.9.1"`;
+`platforms = ["linux", "macos"]`; every action as `["python3", "bin/my-herdr", "<id>"]` (argv,
+relative to the plugin root, no shell); and the one popup, `fork-prompt`, as
+`["sh", "-c", "exec \"$HERDR_PLUGIN_ROOT/bin/my-herdr\" pane fork-prompt"]`, because a pane's
+working directory is not necessarily the plugin root and `sh -c` is only there to expand the
+variable. `tests/check_manifest.py` checks these rules offline.
 
 ---
 
@@ -289,7 +286,7 @@ command = ["bash", "bin/fork-tab-prompt.sh"]
 
 ### 3.1 Process, working directory, stdio **[src `runtime.rs`] + docs**
 
-- **Working directory.** From the plugins page: "Runtime commands run with the plugin directory as their working directory." That is `HERDR_PLUGIN_ROOT`, not the focused pane's cwd. Read the pane cwd from the context JSON (`focused_pane_cwd`) or from `herdr pane get`.
+- **Working directory.** Per the [plugins page][plugins], runtime commands run in the plugin directory. That is `HERDR_PLUGIN_ROOT`, not the focused pane's cwd. Read the pane cwd from the context JSON (`focused_pane_cwd`) or from `herdr pane get`.
 - **Spawn.** The action is spawned **asynchronously on a background thread by the server**. `plugin action invoke` (and the keybinding) returns as soon as the process has started. The response carries a log record with `status: "running"`.
 - **No TTY.** stdout and stderr are piped and captured. **An action cannot prompt the user**; use a popup or overlay pane instead (section 5).
 - **Output cap.** stdout and stderr are each capped at **64 KiB**. Anything beyond that is replaced by `\n[herdr truncated plugin output after 65536 bytes]`.
@@ -300,9 +297,13 @@ command = ["bash", "bin/fork-tab-prompt.sh"]
 
 ### 3.2 Environment variables
 
-Verbatim from the plugins page:
+Per the [plugins page][plugins], every runtime command (run in the plugin directory) gets:
 
-> Runtime commands run with the plugin directory as their working directory. Herdr injects `HERDR_SOCKET_PATH`, `HERDR_BIN_PATH`, `HERDR_ENV=1`, `HERDR_PLUGIN_ID`, `HERDR_PLUGIN_ROOT`, `HERDR_PLUGIN_CONFIG_DIR`, `HERDR_PLUGIN_STATE_DIR`, `HERDR_PLUGIN_CONTEXT_JSON`, and any available `HERDR_WORKSPACE_ID`, `HERDR_TAB_ID`, and `HERDR_PANE_ID`. Action commands also receive `HERDR_PLUGIN_ACTION_ID`; startup and event hooks receive `HERDR_PLUGIN_EVENT` (`startup` for startup hooks), event hooks additionally receive `HERDR_PLUGIN_EVENT_JSON`, and pane commands receive `HERDR_PLUGIN_ENTRYPOINT_ID`.
+- always: `HERDR_SOCKET_PATH`, `HERDR_BIN_PATH`, `HERDR_ENV=1`, `HERDR_PLUGIN_ID`, `HERDR_PLUGIN_ROOT`, `HERDR_PLUGIN_CONFIG_DIR`, `HERDR_PLUGIN_STATE_DIR`, `HERDR_PLUGIN_CONTEXT_JSON`;
+- when available: `HERDR_WORKSPACE_ID`, `HERDR_TAB_ID`, `HERDR_PANE_ID`;
+- actions: `HERDR_PLUGIN_ACTION_ID`;
+- startup and event hooks: `HERDR_PLUGIN_EVENT` (`startup` for startup hooks), and event hooks also `HERDR_PLUGIN_EVENT_JSON`;
+- pane commands: `HERDR_PLUGIN_ENTRYPOINT_ID`.
 
 | Variable | Action | Plugin pane (split/tab/overlay/zoomed) | Plugin **popup** pane | Notes |
 | --- | --- | --- | --- | --- |
@@ -316,15 +317,15 @@ Verbatim from the plugins page:
 | `HERDR_PLUGIN_CONTEXT_JSON` | yes | yes | yes | See 3.3. |
 | `HERDR_PLUGIN_ACTION_ID` | yes (local id, for example `fork-tab`) | no | no | |
 | `HERDR_PLUGIN_ENTRYPOINT_ID` | no | yes | yes | |
-| `HERDR_WORKSPACE_ID` / `HERDR_TAB_ID` / `HERDR_PANE_ID` | from context: **`HERDR_PANE_ID` = the focused pane** at invoke time | the new pane's own ids (normal pane env) | **not set** ("does not export `HERDR_PANE_ID`") | |
+| `HERDR_WORKSPACE_ID` / `HERDR_TAB_ID` / `HERDR_PANE_ID` | from context: **`HERDR_PANE_ID` = the focused pane** at invoke time | the new pane's own ids (normal pane env) | **not set** (the docs say popups do not get `HERDR_PANE_ID`) | |
 | `HERDR_PLUGIN_CLICKED_URL`, `HERDR_PLUGIN_LINK_HANDLER_ID` | link-click only | no | no | |
 | `HERDR_PLUGIN_EVENT`, `HERDR_PLUGIN_EVENT_JSON` | hooks only | no | no | |
 
 Further details:
 
-- **Config and state dirs.** From the plugins page: "Herdr creates those directories [...] but it does not validate, sync, or delete their contents. The plugin owns the file format and lifecycle." Also: "Do not store user credentials or durable state there [plugin root], because GitHub-installed plugin roots are managed source checkouts."
-- **Protected variables.** From the CLI reference: "`--env KEY=VALUE` can be repeated on process-launching commands. It applies to the newly launched process only. Herdr-managed variables such as `HERDR_SOCKET_PATH`, `HERDR_BIN_PATH`, `HERDR_ENV`, `HERDR_WORKSPACE_ID`, `HERDR_TAB_ID`, `HERDR_PANE_ID`, `HERDR_PLUGIN_ID`, `HERDR_PLUGIN_ROOT`, `HERDR_PLUGIN_CONFIG_DIR`, `HERDR_PLUGIN_STATE_DIR`, `HERDR_PLUGIN_ENTRYPOINT_ID`, and `HERDR_PLUGIN_CONTEXT_JSON` stay authoritative when they conflict with caller-provided env."
-- **Custom commands get different names.** `[[keys.command]]` with `type = shell|pane|popup` (not plugin actions) gets a different set: `HERDR_SOCKET_PATH`, `HERDR_BIN_PATH`, `HERDR_ACTIVE_WORKSPACE_ID`, `HERDR_ACTIVE_TAB_ID`, `HERDR_ACTIVE_PANE_ID`, `HERDR_ACTIVE_PANE_CWD` (configuration page). Do not mix up `HERDR_ACTIVE_PANE_ID` with the plugin's `HERDR_PANE_ID`.
+- **Config and state dirs.** Per the [plugins page][plugins], herdr creates these directories but never validates, syncs or deletes what is in them; the plugin owns the file format and lifecycle. Credentials and durable state must not go in the plugin root, because for GitHub installs that root is a managed source checkout.
+- **Protected variables.** Per the [CLI reference][cli-reference], `--env KEY=VALUE` may be repeated on any command that launches a process and applies only to that new process. When it conflicts with a herdr-managed variable, herdr's value wins. The managed list: `HERDR_SOCKET_PATH`, `HERDR_BIN_PATH`, `HERDR_ENV`, `HERDR_WORKSPACE_ID`, `HERDR_TAB_ID`, `HERDR_PANE_ID`, `HERDR_PLUGIN_ID`, `HERDR_PLUGIN_ROOT`, `HERDR_PLUGIN_CONFIG_DIR`, `HERDR_PLUGIN_STATE_DIR`, `HERDR_PLUGIN_ENTRYPOINT_ID`, `HERDR_PLUGIN_CONTEXT_JSON`.
+- **Custom commands get different names.** `[[keys.command]]` with `type = shell|pane|popup` (not plugin actions) gets a different set: `HERDR_SOCKET_PATH`, `HERDR_BIN_PATH`, `HERDR_ACTIVE_WORKSPACE_ID`, `HERDR_ACTIVE_TAB_ID`, `HERDR_ACTIVE_PANE_ID`, `HERDR_ACTIVE_PANE_CWD` ([configuration page][configuration]). Do not mix up `HERDR_ACTIVE_PANE_ID` with the plugin's `HERDR_PANE_ID`.
 
 ### 3.3 `HERDR_PLUGIN_CONTEXT_JSON` shape
 
@@ -378,7 +379,7 @@ Some details **[src]**:
 - The action ran with **cwd = plugin root** and finished in about 40 ms.
 - **`python3` is resolved from the herdr server's PATH, not from your shell's.** Plugin commands are spawned by the server without a shell, so they inherit whatever environment the server was started with. In the observed setup the server ran as a systemd user service (the unit Homebrew's `brew services` generates), whose PATH has no Homebrew directories, so plugins got the system `/usr/bin/python3` (3.10) while interactive shells resolved a newer Homebrew Python. Plugin code must therefore not assume the interpreter it is tested with: the 3.9+ rule is a live constraint, and `tomllib` (3.11+) must stay out of plugin code.
 - A keybinding invocation (`"keybinding"`) has not been captured yet; do that when the first key is bound.
-- **Popups** get the context of the tiled pane under the popup. From the socket API page: "leaves plugin focus context on the underlying tiled pane."
+- **Popups** get the context of the tiled pane under the popup: per the [socket API page][socket-api], opening a popup leaves the plugin focus context on that underlying pane.
 
 Reading it in Bash:
 
@@ -404,7 +405,7 @@ Output is `{"id":"cli:plugin","result":{"logs":[ ... ],"type":"plugin_log_list"}
   "plugin_id": "my-herdr",
   "action_id": "fork-tab",        // or null
   "event": null,                  // or event name / "startup"
-  "command": ["bash", "bin/fork-tab.sh"],
+  "command": ["python3", "bin/my-herdr", "fork-tab"],
   "status": "running|succeeded|failed",
   "started_unix_ms": 1789000000000,
   "finished_unix_ms": 1789000000123,
@@ -426,9 +427,7 @@ herdr plugin action list [--plugin ID]
 herdr plugin action invoke <action_id> [--plugin ID]
 ```
 
-Verbatim from the CLI reference:
-
-> `plugin action invoke` starts the manifest command for an installed, enabled, platform-compatible plugin action and prints the started command log record in the JSON response. Use the qualified action id (`plugin.id.action`) when more than one plugin uses the same action id.
+Per the [CLI reference][cli-reference], `plugin action invoke` starts the manifest command of an action whose plugin is installed, enabled and supports the current platform, and returns the log record of the started command in its JSON response. When several plugins share an action id, pass the qualified id (`plugin.id.action`).
 
 **An action takes no parameters [local, `herdr api schema --json`].** The CLI has no option besides `--plugin`, and `PluginActionInvokeParams` is `action_id`, `plugin_id` and an optional `context`. That `context` is a `PluginInvocationContext` with fixed fields (`focused_pane_id`, `selected_text`, `tab_id`, `correlation_id`, …) and no room for custom data. Anything an invoker needs to hand over has to go through a file, for example in the plugin state directory. `my-herdr` does that for the popup that names a fork.
 
@@ -443,31 +442,38 @@ The response type is `plugin_action_invoked`, with fields `action`, `context`, a
 
 Error codes include `plugin_action_not_found`, `plugin_disabled`, `platform_unsupported`, and `plugin_command_limit_reached`. **[local]** Errors print JSON to **stderr** and exit **1**, for example `{"error":{"code":"plugin_action_not_found","message":"plugin action not found"},"id":"cli:plugin"}`. CLI usage errors exit **2**.
 
-The raw socket request (socket API page):
+The raw socket request ([socket API page][socket-api]):
 
 ```json
 {"id":"req_plugin_invoke","method":"plugin.action.invoke","params":{"action_id":"example.worktree-bootstrap.bootstrap","context":{"invocation_source":"keybinding"}}}
 ```
 
-Both the keybinding path and the API path reload `plugins.json` before resolving the action **[src]**. Edits to the scripts take effect on the next invocation with no relink. **Edits to `herdr-plugin.toml`** are re-read from the manifest path when the registry reloads; the socket API page says "On startup, Herdr re-reads each manifest from its original path". To be safe after changing the manifest, run `herdr plugin link <path>` again. It overwrites the entry with the same id.
+Both the keybinding path and the API path reload `plugins.json` before resolving the action **[src]**. Edits to the scripts take effect on the next invocation with no relink. **Edits to `herdr-plugin.toml` need a relink** **[local]**: an action added to a linked plugin's manifest was not invokable until `herdr plugin link <path>` ran again, which overwrites the entry with the same id. The socket API page says herdr re-reads every manifest from its original path at server startup, so a restart would presumably pick it up too; the relink is the reliable way.
 
 ---
 
 ## 5. Interactive input from a keybinding-triggered action
 
-**Summary.** herdr has **no prompt or dialog API** for plugins ("native non-terminal plugin UI are not part of plugin v1"). Because actions have no TTY, the documented way to ask the user something is a **terminal pane**. The best fit is a **popup** that runs a script which reads input with `read`.
+**Summary.** herdr has **no prompt or dialog API** for plugins (plugin v1 has no native non-terminal UI, §1). Because actions have no TTY, the documented way to ask the user something is a **terminal pane**. The best fit is a **popup** that runs a script which reads input with `read`.
 
-### 5.1 Popup plugin panes (verbatim, plugins page)
+### 5.1 Popup plugin panes (plugins page)
 
-> `placement = "popup"` opens a session-modal terminal popup without changing the tiled layout. It accepts optional `width` and `height` fields in the manifest or open request; omit them for the default half-size popup, use numbers for outer terminal-cell dimensions, or use strings like `"80%"` for a percentage of the terminal area. It receives all terminal input, including Escape, and closes when the command exits or a `popup.close` request is sent. Dimensions smaller than the popup minimum are clamped.
+Source: [plugins page][plugins].
 
-> A popup is a singleton session resource rather than a Herdr pane: it has no pane ID, does not change plugin focus context, emits no pane lifecycle events, and does not participate in pane, layout, persistence, or agent APIs. Its process does not receive `HERDR_PANE_ID`; the underlying tiled pane remains available through `HERDR_PLUGIN_CONTEXT_JSON`. Opening a popup returns `ui_busy` while Settings, Copy mode, or another Herdr modal is active, and `plugin.pane.open` returns an `ok` result after launch.
+**`placement = "popup"`:**
 
-Other placements (verbatim):
+- Opens a session-modal terminal popup; the tiled layout is not changed.
+- Size: optional `width` and `height`, in the manifest or in the open request. Omitted, the popup is half-size by default. A number is outer size in terminal cells; a string like `"80%"` is a percentage of the terminal area. Sizes below the popup minimum are clamped.
+- The popup gets all terminal input, Escape included. It closes when its command exits or when a `popup.close` request arrives.
+- A popup is a singleton session resource, not a herdr pane. It has no pane id, leaves the plugin focus context unchanged, emits no pane lifecycle events, and takes no part in the pane, layout, persistence or agent APIs.
+- Its process gets no `HERDR_PANE_ID`; the tiled pane beneath it is still described in `HERDR_PLUGIN_CONTEXT_JSON`.
+- Opening one while Settings, Copy mode or another herdr modal is active returns `ui_busy`. After launch, `plugin.pane.open` returns an `ok` result.
 
-> Manifest pane `placement` defaults to `overlay`, which opens a temporary zoomed overlay over the active pane and restores the previous focus and zoom when it closes. A `plugin.pane.open` request can override the manifest placement with `overlay`, `popup`, `split`, `tab`, or `zoomed`.
+**Other placements:**
 
-> Split, tab, zoomed, and overlay plugin panes are normal Herdr panes after they open.
+- The manifest default is `overlay`: a temporary zoomed overlay on top of the active pane, which restores the previous focus and zoom when it closes.
+- A `plugin.pane.open` request can override the manifest placement with `overlay`, `popup`, `split`, `tab` or `zoomed`.
+- Once open, split, tab, zoomed and overlay plugin panes are ordinary herdr panes.
 
 ### 5.2 Opening a plugin pane
 
@@ -491,7 +497,7 @@ Responses:
 Validation rules and defaults **[src `plugins/mod.rs`, `panes.rs`]**:
 
 - `--width` and `--height` are rejected (`invalid_params`) unless the effective placement is `popup`.
-- Overlay and popup reject `--workspace`, `--target-pane`, and `--direction`: "overlay and popup plugin panes target the active pane".
+- Overlay and popup reject `--workspace`, `--target-pane`, and `--direction`, because they always target the active pane ("overlay and popup plugin panes target the active pane").
 - Split and zoomed reject `--workspace`.
 - Tab rejects `--target-pane` and `--direction`.
 - If a popup is already open, opening another returns `ui_busy` ("a popup pane is already open").
@@ -506,28 +512,26 @@ Validation rules and defaults **[src `plugins/mod.rs`, `panes.rs`]**:
 {"id":"1","method":"popup.close","params":{}}
 ```
 
-### 5.3 Recommended pattern for `fork-tab` with a name prompt
+### 5.3 Asking for input, then doing slow work: the `fork-tab-ask` pattern
 
-This is my design, not an official recipe. It is built from the documented pieces.
+Built from the documented pieces and verified live on 0.9.1.
 
-1. The keybinding runs `[[keys.command]] type = "plugin_action"` with `command = "my-herdr.fork-tab"`.
-2. `bin/fork-tab.sh` (no TTY) does the preparation:
-   - reads `HERDR_PANE_ID` (the focused pane);
-   - runs `"$HERDR_BIN_PATH" agent get "$HERDR_PANE_ID"` and extracts `.result.agent.agent_session.value`;
-   - checks that `.result.agent.agent == "claude"` and that the session kind is `id`;
-   - if the check fails, runs `notification show` and exits;
-   - otherwise opens the popup and exits right away (the popup keeps living):
-
-   ```bash
-   exec "$HERDR_BIN_PATH" plugin pane open --plugin my-herdr --entrypoint fork-tab-prompt \
-     --env "MYH_SRC_PANE=$HERDR_PANE_ID" --env "MYH_SESSION_ID=$sid" --env "MYH_CWD=$cwd"
-   ```
-
-3. `bin/fork-tab-prompt.sh` runs inside the popup with a real TTY:
-   - `read -r -e -p "Tab name: " name`, then optionally `read -r -e -p "Prompt (optional): " prompt`;
-   - `tab create`, then `pane run` (or `agent start`, see 7.4);
-   - exits, which closes the popup. On error, print the message and `read -r _` so the user can see it before the popup closes. The official example `github-link-preview/preview.sh` does this with `trap finish EXIT`.
-   - Esc is delivered to the popup process, so the script must treat an empty read or Ctrl-C/Ctrl-D as cancel.
+1. The action (`fork-tab-ask`, headless) validates first, so a refusal is a toast before anything
+   is typed, then opens the popup with `plugin pane open --plugin my-herdr --entrypoint
+   fork-prompt --env MH_SOURCE_PANE=<pane>`. Only the pane is passed; everything else is re-read
+   from herdr later.
+2. The popup asks for the input. Esc reaches the popup process, but `input()` cannot see it (the
+   terminal only echoes `^[`), so the popup reads keys itself in cbreak mode; Esc, Ctrl-C and
+   Ctrl-D cancel with exit 0. On error it prints the message and waits for Enter, since the popup
+   closes the moment its process exits.
+3. **The popup does not do the slow work.** It stays on screen until its process exits, and a fork
+   waits for Claude to come up, so doing it in place would cover the new tab for that whole time.
+   Starting the work as a detached process would hide it from herdr: no plugin log, no action
+   environment.
+4. Instead the popup writes its input to a file in `$HERDR_PLUGIN_STATE_DIR` and runs
+   `plugin action invoke my-herdr.fork-tab`, which returns as soon as herdr has started the action
+   (§3.1), then exits. The file is necessary because actions take no parameters (§4). Invoking an
+   action from a popup works as long as that action opens no UI of its own.
 
 Alternative that skips the action and plugin env: a plain `[[keys.command]] type = "popup"` whose `command` runs the script directly. It gets `HERDR_ACTIVE_PANE_ID` and similar. That works too, but lives outside the plugin system: no plugin logs, no plugin env, and the command string runs through `/bin/sh -c`.
 
@@ -545,11 +549,7 @@ command = "example.layout.apply"
 description = "apply layout"
 ```
 
-From the configuration page:
-
-> `type = "plugin_action"` invokes an installed plugin action id. Use the qualified id when action ids are not globally unique:
-
-> `description` is optional. When set, it appears in the keybind help panel (opened with `prefix+?`) instead of the default `'custom command'` label.
+Per the [configuration page][configuration], `type = "plugin_action"` invokes an installed plugin action by id; use the qualified id when the action id is not globally unique. The optional `description` replaces the default `'custom command'` label in the keybind help panel (`prefix+?`).
 
 `[[keys.command]]` fields **[src `config/keybinds.rs`]**:
 
@@ -564,8 +564,8 @@ From the configuration page:
 The four `type` values (configuration page):
 
 - `popup`: session-modal popup; the command runs via `/bin/sh -c`.
-- `pane`: "opens a temporary zoomed pane and closes it when the command exits".
-- `shell`: "runs detached in the background"; `/bin/sh -lc`, stdio goes to `/dev/null`.
+- `pane`: runs the command in a temporary zoomed pane that closes when the command exits.
+- `shell`: runs detached in the background; `/bin/sh -lc`, stdio goes to `/dev/null`.
 - `plugin_action`: invokes the action; the `command` string is the action id.
 
 Popup custom command example (verbatim):
@@ -580,13 +580,15 @@ width = "80%"
 height = "80%"
 ```
 
-### 6.2 Key syntax (verbatim, configuration page)
+### 6.2 Key syntax (configuration page)
 
-> Herdr has a prefix mode similar to tmux. The default prefix is `ctrl+b`. Keybinding strings are explicit: `prefix+n` means press the configured prefix and then `n`; `ctrl+alt+n` is a direct terminal-mode shortcut.
+Source: [configuration page][configuration].
 
-> Key strings accept plain keys, modifier combinations such as `ctrl+a`, `shift+n`, `alt+1`, `cmd+k`, and special keys such as `enter`, `tab`, `esc`, `left`, `right`, `up`, and `down`. Named punctuation such as `minus`, `comma`, `ampersand`, `plus`, and `backtick` is also accepted. Plain direct printable keys such as `n` are unsafe because they intercept typing; use `prefix+n` unless you intentionally want a direct binding.
-
-> A binding may also be an array when one action needs multiple shortcuts: `next_tab = ["prefix+n", "ctrl+alt+]"]`
+- herdr has a tmux-like prefix mode; the default prefix is `ctrl+b`.
+- Key strings say exactly what is pressed: `prefix+n` is the prefix followed by `n`; `ctrl+alt+n` is a direct shortcut in terminal mode.
+- Accepted: plain keys; modifier combinations such as `ctrl+a`, `shift+n`, `alt+1`, `cmd+k`; special keys `enter`, `tab`, `esc`, `left`, `right`, `up`, `down`; named punctuation such as `minus`, `comma`, `ampersand`, `plus`, `backtick`.
+- A bare printable key such as `n` bound directly is unsafe because it swallows typing; use `prefix+n` unless a direct binding is really intended.
+- An action that needs several shortcuts takes an array: `next_tab = ["prefix+n", "ctrl+alt+]"]`.
 
 The prefix itself is set with `[keys] prefix = "ctrl+b"`. Examples in the reference: `"ctrl+b"`, `"f12"`, `"esc"`.
 
@@ -648,7 +650,7 @@ Bindings are registered in two passes: **user first** (explicit `[keys]` entries
 
 **Free prefix keys** (lowercase letters not used by defaults): `prefix+a`, `prefix+d`, `prefix+f`, `prefix+i`, `prefix+m`, `prefix+t`, `prefix+u`, `prefix+y`. All `prefix+shift+<letter>` combinations are free except H J K L N G W D T X P R. `prefix+alt+*` is completely unused by defaults; the docs use `prefix+alt+g` and `prefix+alt+1..9` as examples.
 
-**Direct (prefix-free) chords.** Verbatim advice from the keyboard page: "One modifier family is almost untouched everywhere: `ctrl+alt`." Avoid these:
+**Direct (prefix-free) chords.** The [keyboard page][keyboard] recommends `ctrl+alt` as the modifier family that is almost untouched everywhere, with these exceptions to avoid:
 
 | Chord | Owned by |
 | --- | --- |
@@ -658,17 +660,14 @@ Bindings are registered in two passes: **user first** (explicit `[keys]` entries
 | `ctrl+alt+s` / `ctrl+alt+u` | Konsole |
 | `ctrl+alt+f1..f12` | Linux virtual console switching |
 
-### 6.5 Reloading config (verbatim, configuration page)
+### 6.5 Reloading config (configuration page)
 
-> Reload a running server after editing `config.toml`:
->
-> `herdr server reload-config`
->
-> You can also open the global menu in Herdr and choose `reload config`.
->
-> Reload applies most UI settings without restarting panes. Startup-only settings still need a restart.
+Source: [configuration page][configuration].
 
-> Themes, sidebar layouts, copy behavior, and other presentation settings come from the client's local config [...]. Pane defaults, worktrees, integrations, and custom commands belong to the server where the panes run. The UI's `reload config` action reloads both the client's local settings and the selected server's config. Local keybindings reload too; `--remote-keybindings server` instead uses the selected server's keybindings.
+- After editing `config.toml`, reload a running server with `herdr server reload-config`, or pick `reload config` from herdr's global menu.
+- A reload applies most UI settings without restarting panes; startup-only settings still need a restart.
+- Presentation settings (themes, sidebar layouts, copy behaviour and the like) come from the client's local config. Pane defaults, worktrees, integrations and custom commands belong to the server that runs the panes.
+- The UI's `reload config` reloads both the client's local settings and the selected server's config, local keybindings included. With `--remote-keybindings server`, the selected server's keybindings are used instead.
 
 Config file: `~/.config/herdr/config.toml` (or `$HERDR_CONFIG_PATH`).
 
@@ -706,15 +705,12 @@ herdr plugin log list [--plugin ID] [--limit N]
 herdr plugin pane open|focus|close ...
 ```
 
-Key facts, verbatim:
+Key facts (sources: [plugins page][plugins], [CLI reference][cli-reference], [socket API page][socket-api]):
 
-> `plugin link` accepts a plugin directory containing `herdr-plugin.toml` or a direct manifest path. Use it while authoring or testing a plugin from a local checkout. `plugin unlink` unregisters the plugin and leaves files alone.
-
-> Installed and linked plugins, including their enabled state, are global to the current user and available in every Herdr session. Both `plugin install` and `plugin link` can register plugins while no Herdr server is running.
-
-> Herdr writes a `plugins.json` registry file alongside `session.json` on `plugin.link`, `plugin.unlink`, `plugin.enable`, and `plugin.disable`. [...] On startup, Herdr re-reads each manifest from its original path; if the file is missing or unparseable, the entry is kept with a `warnings` field so `plugin.list` surfaces it.
-
-> `plugin install` and `plugin link` create the plugin's config and state directories, and `plugin config-dir <id>` prints the config directory
+- `plugin link` takes either a plugin directory containing `herdr-plugin.toml` or the manifest path itself. It is meant for authoring and testing from a local checkout. `plugin unlink` unregisters the plugin and does not touch its files.
+- Installed and linked plugins, with their enabled state, are global to the current user and visible in every herdr session. `plugin install` and `plugin link` both work while no herdr server is running.
+- `plugin.link`, `plugin.unlink`, `plugin.enable` and `plugin.disable` write the `plugins.json` registry next to `session.json`. At startup herdr re-reads each manifest from its original path; a missing or unparseable manifest keeps its entry, with a `warnings` field that `plugin.list` shows.
+- `plugin install` and `plugin link` create the plugin's config and state directories; `plugin config-dir <id>` prints the config directory.
 
 Notes:
 
@@ -723,11 +719,14 @@ Notes:
 - **Registry location.** `plugins.json` sits next to `session.json` in `~/.config/herdr/`.
 - **Remote machines.** Plugin link paths must be absolute when routed with `--machine`.
 
-### 7.2 Installing from GitHub (verbatim)
+### 7.2 Installing from GitHub
 
-> `plugin install` accepts GitHub shorthand only, such as `owner/repo/subdir`. It clones with `git`, shows a preview in interactive terminals, runs supported build commands, then stores the checkout under Herdr-managed plugin data and registers it. Use `--yes` for noninteractive installs. Reinstalling a GitHub-managed plugin replaces that managed checkout. [...] Installing over a locally linked plugin is refused; unlink or uninstall the local plugin first.
+Sources: [plugins page][plugins], [CLI reference][cli-reference].
 
-> `plugin uninstall <id-or-source>` unregisters the plugin. For GitHub-managed installs it also removes the managed checkout, and it accepts either the plugin id or the same `owner/repo[/subdir...]` shorthand used by install. [...] There is no separate `plugin update` in v1; reinstall from GitHub to refresh a managed plugin.
+- `plugin install` only accepts GitHub shorthand such as `owner/repo/subdir`. It clones with `git`, shows a preview when the terminal is interactive, runs the build commands for the platform, then stores the checkout in herdr-managed plugin data and registers it. `--yes` makes it noninteractive.
+- Reinstalling a GitHub-managed plugin replaces its managed checkout. Installing over a locally linked plugin is refused: unlink or uninstall the local one first.
+- `plugin uninstall <id-or-source>` unregisters the plugin and, for GitHub installs, deletes the managed checkout. It takes the plugin id or the same `owner/repo[/subdir...]` shorthand as install.
+- v1 has no `plugin update`; reinstall from GitHub to refresh a managed plugin.
 
 - **Managed checkout location [src]:** `~/.config/herdr/plugins/github/<component>`.
 - **Source metadata.** `plugin list --json` shows `source`: `{kind:"github", owner, repo, subdir, requested_ref, resolved_commit, managed_path, installed_unix_ms}`. For linked plugins it is `{kind:"local"}`.
@@ -735,19 +734,20 @@ Notes:
 
 ### 7.3 What a repo needs
 
-**To be installable** (marketplace page, verbatim):
+Source: [marketplace page][marketplace].
 
-> The command works with a public GitHub repository that has a `herdr-plugin.toml` manifest at its root or in a subdirectory.
+**To be installable:** a public GitHub repository with a `herdr-plugin.toml` manifest at its root or in a subdirectory.
 
 The manifest must satisfy all the validation in section 2. `min_herdr_version` must not be newer than the installer's herdr.
 
-**To be listed in the marketplace** (verbatim):
+**To be listed in the marketplace:**
 
-> Add the GitHub topic `herdr-plugin` to a public repository and put one or more `herdr-plugin.toml` manifests with parseable required metadata on its default branch. Manifests may be at the root or in subdirectories. The marketplace uses one card per repository and lists each valid manifest as a separately installable plugin. The index refreshes automatically every 30 minutes and rescans repositories when their default-branch head changes.
-
-> The index records the manifest path, `id`, `name`, `version`, `platforms`, and `min_herdr_version` together with the exact default-branch commit. Forks, archived repositories, repositories without a valid plugin manifest, and malformed manifest metadata are excluded.
-
-> Discovery is automatic and unreviewed. A listing means a repository tagged itself, not that Herdr vetted it
+- Tag a public repository with the GitHub topic `herdr-plugin`, and have one or more `herdr-plugin.toml` manifests with parseable required metadata on its default branch, at the root or in subdirectories.
+- Each repository gets one card; every valid manifest in it is listed as a separately installable plugin.
+- The index refreshes itself every 30 minutes and rescans a repository when its default-branch head changes.
+- Per manifest it records the path, `id`, `name`, `version`, `platforms` and `min_herdr_version`, plus the exact default-branch commit.
+- Excluded: forks, archived repositories, repositories without a valid plugin manifest, and manifests with malformed metadata.
+- Discovery is automatic and nobody reviews it: a listing only means the repository tagged itself (see §8).
 
 Browse the marketplace at https://herdr.dev/plugins/.
 
@@ -761,11 +761,9 @@ herdr agent list
 herdr agent start <name> --kind KIND --pane ID [--timeout MS] [-- <agent-args...>]
 ```
 
-`agent_session` (verbatim, socket API page):
+`agent_session` ([socket API page][socket-api]): `pane.get`, `pane.list`, `agent.get` and `agent.list` include a read-only `agent_session` object when herdr has stored a native session reference for the agent, and omit the field otherwise.
 
-> `pane.get`, `pane.list`, `agent.get`, and `agent.list` expose a read-only `agent_session` object when Herdr has a stored native session reference [...] If no native session reference is stored, the field is omitted.
-
-For Claude this requires `herdr integration install claude`. From the integrations page: "The hook reports Claude Code session identity to the local Herdr socket on session start. Claude Code state comes from Herdr's screen manifest detection."
+For Claude this requires `herdr integration install claude`. Per the [integrations page][integrations], the installed hook reports the Claude Code session identity to the local herdr socket when a session starts, while Claude Code's state comes from herdr's screen-manifest detection.
 
 **The hook is versioned independently of herdr [local].** herdr 0.9.1 installs **v10**, whose Claude-settings registration matches the `SessionStart` sources `^(startup|resume|clear|compact|fork)$`. `fork` is in that list, so a forked session reports its **new** id when it starts.
 
@@ -781,6 +779,20 @@ command -v python3 >/dev/null 2>&1 || exit 0
 ```
 
 So a Claude started **inside a popup would never register a session**, because popups get no `HERDR_PANE_ID` (§3.2). That is the concrete mechanism behind the "never launch the agent in the popup" pitfall: the fork would run, but herdr would never learn its session id, and forking *that* fork later would be impossible. It also means the hook needs `python3` on PATH, the same interpreter this plugin needs.
+
+**What the hook does, and when it goes stale [local, read from the installed v10 script].** It is registered only for `SessionStart`. It reads `HERDR_PANE_ID` from **its own** environment, sends `pane.report_agent_session` with the `session_id` from Claude's hook input, and discards herdr's reply and every error (`except Exception: pass`). herdr's server log records only failed requests, so a successful report leaves no trace anywhere.
+
+**Background Claude sessions break the pane ↔ session link [local, Claude Code 2.1.278].** Claude's background-sessions feature (`claude --bg`, `claude agents`, `claude attach <id>`, switching sessions inside the TUI) hosts sessions in a `claude daemon` process. The `claude` in the pane is then only a front-end. Measured with a temporary hook that logged event, session id, `HERDR_PANE_ID` and process chain for `SessionStart`, `SessionEnd` and `UserPromptSubmit`:
+
+- Switching the front-end to an existing session fires **no hook at all**.
+- The daemon inherits the environment of the pane whose Claude spawned it, once, at start, and outlives that pane. Every hook of a daemon-hosted session runs there, so it reports **that** pane, even after it is closed. The daemon also pre-starts spare sessions, which fire `SessionStart` with the same stale pane.
+- The front-end reports only its own startup session, or nothing under `claude agents`. So `agent get` on the pane returns that startup id, or no `agent_session` at all.
+- While a session is running in the background, `claude --resume` on it only offers to **attach**, which keeps it in the daemon. Stopping it (`claude stop <id>`) and then resuming it in a pane restores a normal, correctly reported session. Resuming keeps the session id.
+- herdr still shows such a pane's status and title correctly, because `agent_status` comes from screen detection and the title from the terminal. Only the id is wrong.
+
+Claude Code 2.1.278 has these hook events: `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `PermissionRequest`, `UserPromptSubmit`, `Notification`, `Stop`, `SubagentStart`, `SubagentStop`, `PreCompact`, `PostCompact`, `PreModelSwitch`, `PostModelSwitch`, `SessionStart`, `SessionEnd`. None fires on attach or switch.
+
+A Claude conversation is saved as `<claude config>/projects/<project dir>/<session id>.jsonl` (config = `CLAUDE_CONFIG_DIR`, else `~/.claude`), and only after its first message. `--resume` of an id without that file makes Claude exit at once with "No conversation found", while `agent start` keeps waiting until its timeout.
 
 **[local]** Actual output of `herdr agent get w1:pC` (a pane running Claude; session id and paths replaced with placeholders):
 
@@ -800,11 +812,12 @@ process can load a **discarded branch** left by a rewind: the transcript keeps b
 Claude (2.1.278) has no flag to resume at a given message. A fork is only as current as those two
 allow.
 
-**`agent start` as an alternative to `pane run`** (CLI reference, verbatim):
+**`agent start` as an alternative to `pane run`** ([CLI reference][cli-reference]):
 
-> `agent start` activates an existing available shell pane: the pane's interactive shell must own the foreground, with no foreground command, editor, or agent running. [...] Names are unique among live agents and must match `[a-z][a-z0-9_-]{0,31}`. The kind selects Herdr's canonical interactive executable, while arguments after `--` are passed to that executable.
-
-> A successful start returns only after the expected agent owns the same terminal and is ready for interactive input. [...] The default startup timeout is 30000 milliseconds
+- It turns an existing, available shell pane into an agent pane. The pane's interactive shell must hold the foreground: no foreground command, editor or agent may be running.
+- The name must be unique among live agents and match `[a-z][a-z0-9_-]{0,31}`.
+- `--kind` picks herdr's canonical interactive executable for that agent; arguments after `--` go to that executable.
+- It returns success only once the expected agent owns that same terminal and is ready for interactive input. The default startup timeout is 30000 ms.
 
 For example:
 
@@ -816,19 +829,15 @@ This waits for the new shell to be ready, which `pane run` does not. The catch i
 
 ---
 
-## 8. Trust and security model (verbatim)
+## 8. Trust and security model
 
-From the plugins page, "Trust and security":
+Sources: "Trust and security" and startup hooks sections of the [plugins page][plugins]; [marketplace page][marketplace].
 
-> A plugin is ordinary code that runs on your machine. Its build and runtime commands run as your user, inherit your environment, and can call the full Herdr CLI. Treat a plugin like any extension you add to an editor, shell, or coding agent.
-
-> Install or link plugins only from authors and repositories you trust. Before installing or linking one, skim the `herdr-plugin.toml` manifest and the scripts or binaries it runs. `herdr plugin install` shows a preview of the source and the commands it will run in interactive terminals, so you can review before confirming. Use `--yes` for sources you already trust, and pin `--ref` when you want a specific revision.
-
-> Herdr validates the manifest and keeps each plugin's config and state in its own directory, but it does not review or sandbox plugin code. Third-party plugins come from their authors, not Herdr; you are responsible for deciding whether to run them.
-
-From the startup hooks section: "The install preview lists every startup command so users can review code that will run automatically."
-
-From the marketplace page: "The index covers public GitHub repositories; it is not a reviewed catalog." Also: "Discovery is automatic and unreviewed. A listing means a repository tagged itself, not that Herdr vetted it, so the trust guidance applies before you install anything."
+- A plugin is ordinary code running on the user's machine. Its build and runtime commands run as the user, inherit the user's environment and can call the whole herdr CLI. herdr asks users to treat it like any editor, shell or coding-agent extension.
+- Users should install or link only plugins from authors and repositories they trust, after skimming `herdr-plugin.toml` and the scripts or binaries it runs.
+- In interactive terminals, `herdr plugin install` previews the source and the commands it will run before asking for confirmation. The preview lists every startup command, so code that will run automatically can be reviewed. `--yes` is for sources already trusted; `--ref` pins a specific revision.
+- herdr validates the manifest and gives each plugin its own config and state directory, but it neither reviews nor sandboxes plugin code. Third-party plugins come from their authors, not from herdr, and running them is the user's decision.
+- The marketplace index covers public GitHub repositories and is not a reviewed catalog. Discovery is automatic: a listing only means the repository tagged itself, so the trust guidance above applies before installing anything.
 
 There are **no permission scopes and no sandbox**. A plugin has full CLI and socket access.
 
@@ -836,7 +845,7 @@ There are **no permission scopes and no sandbox**. A plugin has full CLI and soc
 
 ## 9. CLI and socket reference for the planned actions
 
-All IDs are opaque: workspace `w1`, tab `w1:t1`, pane `w1:p1`. From the herdr skill: "Closed tab and pane IDs are not reused." Always read IDs from JSON responses.
+All IDs are opaque: workspace `w1`, tab `w1:t1`, pane `w1:p1`. Per the herdr skill, ids of closed tabs and panes are never reused. Always read IDs from JSON responses.
 
 ### 9.1 `tab create`
 
@@ -844,10 +853,11 @@ All IDs are opaque: workspace `w1`, tab `w1:t1`, pane `w1:p1`. From the herdr sk
 herdr tab create [--workspace <workspace_id>] [--cwd PATH] [--label TEXT] [--env KEY=VALUE] [--focus] [--no-focus]
 ```
 
-> A tab is another terminal layout inside a workspace. Without `--workspace`, `tab create` uses the active workspace and fails if none exists. Its JSON response exposes `.result.tab.tab_id` and `.result.root_pane.pane_id`.
+Per the [CLI reference][cli-reference]:
 
-> Workspace and tab creation, and pane splitting, leave focus unchanged by default. `--focus` selects the new layout [...] Each `--env KEY=VALUE` adds or replaces that variable in the new root shell.
-
+- A tab is one more terminal layout within a workspace. Without `--workspace`, `tab create` uses the active workspace, and fails if there is none. The response exposes `.result.tab.tab_id` and `.result.root_pane.pane_id`.
+- Creating a workspace or tab, and splitting a pane, do not change focus by default; `--focus` selects the new layout.
+- Each `--env KEY=VALUE` adds or overrides that variable in the new root shell.
 - **Response type** `tab_created` with `tab` (TabInfo) and `root_pane` (PaneInfo).
 - **TabInfo fields:** `tab_id`, `workspace_id`, `number`, `label`, `focused`, `pane_count`, `agent_status`.
 - **[local]** `tab list` item: `{"agent_status":"blocked","focused":true,"label":"api","number":6,"pane_count":2,"tab_id":"w1:t6","workspace_id":"w1"}`.
@@ -869,19 +879,21 @@ herdr pane move <pane_id> --new-workspace [--label TEXT] [--tab-label TEXT] [--f
 >
 > The CLI's default is `focus = true` for `pane move`, unlike the create commands.
 
-Verbatim from the CLI reference:
+Per the [CLI reference][cli-reference]:
 
-> After `pane move`, use `.result.move_result.pane.pane_id` for later commands. A cross-workspace move changes the workspace-qualified pane ID; the prior value remains at `.result.move_result.previous_pane_id`. The running process keeps its launch-time `HERDR_PANE_ID`, `HERDR_TAB_ID`, and `HERDR_WORKSPACE_ID`; Herdr retains the old pane ID as an alias for that terminal, so pane commands using `--current` still resolve it. A live agent name follows the terminal and continues to resolve after the move.
+- After `pane move`, use `.result.move_result.pane.pane_id` in later commands.
+- A move to another workspace changes the workspace-qualified pane id; the old id is in `.result.move_result.previous_pane_id`.
+- The running process keeps the `HERDR_PANE_ID`, `HERDR_TAB_ID` and `HERDR_WORKSPACE_ID` it was launched with. herdr keeps the old pane id as an alias for that terminal, so pane commands with `--current` still resolve it.
+- A live agent name moves with the terminal and still resolves after the move.
 
-Raw form and semantics (socket API page):
+Raw form and semantics ([socket API page][socket-api]):
 
 ```json
 {"id":"req_move_new_tab","method":"pane.move","params":{"pane_id":"w1:p2","destination":{"type":"new_tab","workspace_id":"w1","label":"logs"},"focus":true}}
 ```
 
-> Moves involving a zoomed source or target tab return `changed: false` with `reason: "zoomed_tab"`.
-
-> The response is `type: "pane_move"` with `changed`, optional `reason`, `previous_pane_id`, `previous_workspace_id`, `previous_tab_id`, the moved `pane`, optional `source_layout`, `target_layout`, optional created workspace or tab records, optional closed workspace or tab ids, and `focused_pane_id`.
+- If the source or target tab is zoomed, the move returns `changed: false` with `reason: "zoomed_tab"`.
+- The response has `type: "pane_move"` and carries `changed`, optional `reason`, `previous_pane_id`, `previous_workspace_id`, `previous_tab_id`, the moved `pane`, optional `source_layout`, `target_layout`, optional records of a created workspace or tab, optional ids of a closed workspace or tab, and `focused_pane_id`.
 
 - **CLI wrapper:** the fields sit under `.result.move_result`. Schema `PaneMoveResult`: `changed`, `reason` (`same_tab`|`zoomed_tab`|null), `previous_pane_id`, `previous_workspace_id`, `previous_tab_id`, `pane` (PaneInfo), `source_layout?`, `target_layout`, `created_tab?` (TabInfo), `created_workspace?`, `closed_tab_id?`, `closed_workspace_id?`, `focused_pane_id`.
 - **Check `changed`**, because a zoomed tab makes the move a no-op rather than an error. If the pane was the only one in its tab, expect `closed_tab_id` to be set.
@@ -893,7 +905,7 @@ Raw form and semantics (socket API page):
 herdr pane run <pane_id> <command>
 ```
 
-> `pane run` honors live bracketed-paste mode and submits text plus Enter atomically. Prefer it over `send-text` plus `send-keys Enter` for commands
+Per the [CLI reference][cli-reference], `pane run` respects the pane's live bracketed-paste mode and sends the text and Enter as one atomic submission, so it is the preferred way to run a command (over `send-text` followed by `send-keys Enter`).
 
 **[src]** The CLI joins all remaining arguments with single spaces and **types the text into the pane's shell**. Consequences:
 
@@ -909,7 +921,7 @@ herdr pane split [<pane_id>|--pane ID|--current] --direction right|down [--ratio
 ```
 
 - The response exposes the new pane as `.result.pane.pane_id`.
-- An omitted target "splits the calling pane when `HERDR_PANE_ID` is available, otherwise the focused pane", and `--current` errors without `HERDR_PANE_ID`. **Always pass an explicit pane id** rather than relying on that.
+- With no target given, it splits the calling pane if `HERDR_PANE_ID` is set and the focused pane otherwise; `--current` fails without `HERDR_PANE_ID`. **Always pass an explicit pane id** rather than relying on that.
 
 ### 9.5 `pane rename`, `tab rename`
 
@@ -929,7 +941,7 @@ herdr pane get <pane_id>
 **GOTCHA [local]:** `pane get` takes the id **positionally**, while its neighbours `pane current` and
 `pane process-info` take `--pane ID`. `herdr pane get --pane w1:p1` is a usage error and exits 2.
 
-`pane.current` (verbatim): "returns a single `PaneInfo`. When `caller_pane_id` is present, Herdr returns that pane. When it is omitted, Herdr returns the active focused pane." They "resolve the calling pane instead of another client's focused pane".
+`pane.current` ([socket API page][socket-api]) returns one `PaneInfo`: the pane named by `caller_pane_id` if given, else the active focused pane. So these commands resolve the calling pane rather than whichever pane another client has focused.
 
 **[local]** The response `type` is **`pane_current`**, not `pane_info`:
 
@@ -943,7 +955,7 @@ herdr pane get <pane_id>
 - **Optional:** `agent`, `agent_session`, `cwd`, `foreground_cwd`, `label`, `title`, `display_agent`, `state_labels`, `tokens`, `scroll`, `terminal_title`, `terminal_title_stripped`.
 - **AgentInfo** adds `name`, `interactive_ready`, `launch_pending`, `screen_detection_skipped`, `state_change_seq`.
 
-Pane `cwd` vs `foreground_cwd` (verbatim): "`foreground_cwd` when Herdr can resolve the cwd of the foreground process controlling the pane. The `cwd` field remains the pane/workspace cwd used for labels and follow-cwd behavior." For forking Claude, prefer `foreground_cwd // cwd` as `--cwd` of the new tab: Claude sessions are keyed by project directory.
+Pane `cwd` vs `foreground_cwd`: `foreground_cwd` is present when herdr can resolve the cwd of the foreground process that controls the pane; `cwd` stays the pane/workspace cwd that labels and follow-cwd behaviour use. For forking Claude, prefer `foreground_cwd // cwd` as `--cwd` of the new tab: Claude sessions are keyed by project directory.
 
 ### 9.7 `agent list`
 
@@ -975,7 +987,7 @@ Response: `{"type":"notification_show","shown":true,"reason":"shown"}`. `reason`
 
 ### 9.9 Socket transport
 
-> Herdr uses newline-delimited JSON over a local socket. On Unix, that socket is a Unix domain socket.
+Per the [socket API page][socket-api], herdr speaks newline-delimited JSON over a local socket, which on Unix is a Unix domain socket.
 
 Request and response shapes:
 
@@ -986,7 +998,7 @@ Request and response shapes:
 ```
 
 - **Socket path:** `~/.config/herdr/herdr.sock` for the default session; `~/.config/herdr/sessions/<name>/herdr.sock` for named sessions.
-- **Protocol tolerance:** "JSON API clients should ignore unknown fields and handle unsupported methods as normal errors."
+- **Protocol tolerance:** clients should ignore fields they do not know and treat an unsupported method as an ordinary error.
 - **Schema dump:** `herdr api schema --json` (or `--output FILE`) prints the full JSON Schema for the installed binary. That is the authoritative source for field names.
 
 ---
@@ -1039,7 +1051,7 @@ Request and response shapes:
 16. **`agent_session` is only present after `herdr integration install claude`** has installed the SessionStart hook, and only once Claude has started or resumed inside that pane. It is omitted otherwise. Make fork-tab fail gracefully with a `notification show`.
 17. **`pane current` returns `type: "pane_current"`**, not `pane_info` as the generic docs example suggests.
 18. **CLI errors go to stderr as JSON with exit code 1.** Usage errors exit 2. `set -e` scripts should capture stderr for the user-facing message.
-19. **Relinking.** Scripts are read fresh on every run, and the registry is reloaded on every invoke. After editing `herdr-plugin.toml`, run `herdr plugin link <dir>` again to refresh the stored manifest.
+19. **Relinking.** Scripts are read fresh on every run, and the registry is reloaded on every invoke, but a manifest change (for example a new action) needs `herdr plugin link <dir>` again before herdr sees it (§4).
 20. **There is no `herdr plugin update`.** Reinstall from GitHub. Installing over a locally linked plugin with the same id is refused; `unlink` first.
 21. **`agent_status = "done"` only exists while nobody has looked.** It is durable (measured: >24 minutes) for an unseen agent, but an agent that finishes in a pane you are watching goes straight to `idle` and never passes through `done`. There is no seen field to read instead. See §9.7.
 22. **The claude integration hook needs `HERDR_PANE_ID`.** Without it (a popup has none) the hook exits silently and herdr never learns the session id, even though Claude itself starts fine. See §7.4.

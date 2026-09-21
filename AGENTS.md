@@ -39,18 +39,26 @@ If the research and the live `herdr` CLI disagree, trust the CLI, then update th
 - **Actions run headless**: no TTY, cwd = plugin root, stdout/stderr go to
   `herdr plugin log list --plugin my-herdr`. Interactive input needs a **popup plugin pane**
   (`[[panes]] placement = "popup"`) opened by the action with `herdr plugin pane open --env ...`.
-- **Popups have no `HERDR_PANE_ID`.** Pass the source pane, session id, and cwd via `--env`. Only one
-  popup can be open at a time (`ui_busy`). Use blocking `read`, never `read -t`.
+- **Popups have no `HERDR_PANE_ID`.** Pass what the popup needs via `--env` (`fork-tab-ask` passes
+  only the source pane; everything else is re-read from herdr). Only one popup can be open at a time
+  (`ui_busy`). A popup stays on screen until its process exits, so it must not do slow work itself.
+- **Actions take no parameters.** `plugin action invoke` has no way to pass any, and the socket API's
+  invocation `context` has fixed fields. To hand data to an action, write it to a file in
+  `$HERDR_PLUGIN_STATE_DIR` first (see `myherdr/fork_request.py`: atomic, claimed once, expires).
+  Don't start plugin work as a detached process instead: herdr would not log it or see it.
 - In pane commands, reference scripts via `$HERDR_PLUGIN_ROOT`, not relative paths.
 - Manifest commands are **argv arrays, no shell**. Action/pane ids must not contain dots.
 - Keybindings **cannot** be declared in the manifest. Document `[[keys.command]]` blocks
   (`type = "plugin_action"`) in the README.
 - `pane move --new-tab` takes `--label` (not `--tab-label`). Check `.result.move_result.changed`.
 - Claude session id: `herdr agent get <pane>` → `.result.agent.agent_session.value` (needs
-  `herdr integration install claude`).
+  `herdr integration install claude`). herdr learns it only when Claude **starts** in the pane.
+  **Background Claude sessions** (`claude --bg`, `claude agents`, switching sessions inside Claude)
+  run in Claude's daemon and are never tied to a pane: herdr shows their status (read from the
+  screen) but holds a wrong or no id. A saved conversation is `<claude config>/projects/*/<id>.jsonl`.
 - Toast failures with `herdr notification show`, because otherwise they're invisible.
 
-## Layout (target)
+## Layout
 
 ```
 herdr-plugin.toml        manifest
@@ -58,6 +66,9 @@ bin/my-herdr             executable dispatcher (#!/usr/bin/env python3)
 myherdr/herdr.py         herdr CLI wrapper: run(), run_json(), notify(), focused_pane(), …
 myherdr/context.py       env + HERDR_PLUGIN_CONTEXT_JSON
 myherdr/errors.py        MyHerdrError
+myherdr/fork.py          the fork routine shared by fork-tab and fork-tab-ask
+myherdr/fork_request.py  one-shot hand-off of a tab name from the popup to fork-tab
+myherdr/prompt.py        one-line editor for popups (Esc cancels, which input() cannot see)
 myherdr/actions/<id>.py  one module per action, each with main(args)
 myherdr/panes/<id>.py    one module per popup/pane entrypoint
 myherdr/cli.py           dispatcher: routes <action> / pane <entrypoint> to a module

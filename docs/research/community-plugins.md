@@ -4,7 +4,7 @@
 > looked while this one was being built. The repositories move on; treat every claim about them as
 > "was true once", and check the repository itself before relying on it.
 
-Research note for building **my-herdr**, a herdr plugin with no build step. It was first planned in Bash + jq and is now written in Python (see the note at the top of §4). Planned actions: fork the focused pane's Claude Code session into a new tab (optionally asking for a name or prompt), move the focused pane into a new tab, and more later.
+Research note from building **my-herdr**, a herdr plugin with no build step. It was first planned in Bash + jq and is written in Python (see the note at the top of §4).
 
 - Checked against herdr **0.9.1**. The recommendations assume no extra tools: `fzf`, `shellcheck`, `bats` and `gum` are not required.
 - Sources: shallow clones of the repos in §1, the official docs at https://herdr.dev/docs/plugins/ and https://herdr.dev/docs/marketplace/, and `herdr <cmd> --help` on 0.9.0.
@@ -593,10 +593,12 @@ die() {
 
 ## 4. Recommendations for my-herdr (Bash + jq, no build)
 
-> **Read this section as a spec, not as code.** `my-herdr` is **Python 3, standard library only**, so
-> the shell snippets below describe the *herdr call sequences and the logic* to port — see
-> `docs/PLAN.md`. The project also has no CI and no linter: §4.8's workflow does not apply, while its
-> fake-herdr and manifest-check ideas were kept and ported to Python. Checks run via `make check`.
+> **The design sketch this plugin started from, not a description of it.** `my-herdr` is built, in
+> **Python 3, standard library only**; the code, `AGENTS.md` and `docs/PLAN.md` are the source of
+> truth. The Bash below still names the planned ids (`fork-claude-tab`, `move-pane-new-tab`), which
+> shipped as `fork-tab`, `fork-tab-ask` and `pane-to-tab`. What remains useful here is the survey of
+> patterns: the herdr call sequences, the helper ideas, and the pitfalls. The project has no CI and
+> no linter, so §4.8's workflow does not apply; its fake-herdr and manifest-check ideas were ported.
 
 ### 4.1 Manifest skeleton
 
@@ -762,52 +764,35 @@ action_move_pane_new_tab() {
 - If the pane is the only one in its tab, the source tab closes (drovr README). Consider refusing or no-oping when `pane list` shows it is alone.
 - `--label NAME` names the new tab. An "ask for name" variant would use the popup flow below.
 
-**Fork Claude into a new tab, no prompt** (forkr recipe, Claude only):
+**Fork Claude into a new tab.** The studied plugins (forkr, fork-from-message) share one sequence,
+which `my-herdr` implements in `myherdr/fork.py`: `agent get` → require `agent == "claude"` and
+`agent_session.kind == "id"` → `tab create --workspace --cwd` (cwd = `foreground_cwd // cwd`, and
+`--env CLAUDE_CONFIG_DIR=…` if set) → wait for the new shell → `agent start <tmp-name> --kind claude
+--pane <new> -- --resume <sid> --fork-session [-n <name>]` → `agent rename <new> --clear`, closing
+the tab if the start fails. Where `my-herdr` departs from them, and why, is in `docs/PLAN.md`
+(Phases 5 and 6): no invented `fork: …` label, the tab focused on creation, the saved conversation
+checked before any tab exists, and background Claude sessions refused (`official-docs.md` §7.4).
 
-1. Get `pane` via `focused_pane`, then `info=$(h agent get "$pane")`.
-2. Check `.result.agent.agent == "claude"`. Read `sid` from `.result.agent.agent_session.value` and require `.agent_session.kind == "id"`; otherwise tell the user to run `herdr integration install claude`. Also read `ws` from `.workspace_id` and `cwd` from `.foreground_cwd // .cwd`.
-3. `h tab create --workspace "$ws" --cwd "$cwd" [--label "fork: <tab_label>"] --no-focus`, then take `.result.root_pane.pane_id` and `.result.tab.tab_id`.
-4. If `CLAUDE_CONFIG_DIR` is set, pass `--env CLAUDE_CONFIG_DIR=...` (fork-from-message).
-5. `wait_shell_ready "$new"`, then `h agent start "mh-fork-$$" --kind claude --pane "$new" --timeout 60000 -- --resume "$sid" --fork-session`. Tolerate `agent_not_ready`, then `h agent rename "$new" --clear`.
-6. `h tab focus "$tab"` and `notify "Forked $pane -> $new"`.
-7. Optional (fork-from-message): if steps 4–5 fail, `h tab close "$tab"` so no half-finished tab is left.
+**Asking for input first** (two-stage: action → popup). The action validates headless, so errors
+surface as toasts, then opens the popup with `plugin pane open --entrypoint … --env …`; omit
+`--placement` so the manifest's `popup` applies (catchup), and don't pass `--target-pane` for a
+popup, herdr rejects it. On Esc or empty input, exit 0 silently (drovr treats cancel as success); on
+error, keep the popup readable until Enter. **Don't do slow work in the popup**: it stays on screen
+until its process exits. drovr does its moves from the popup because a move is instant; a fork
+waits for Claude. Invoking another action from the popup works for actions that open no UI (that is
+how `fork-tab-ask` hands off to `fork-tab`), but one that opens UI gets `ui_busy` (plugin-manager).
 
-**Fork with name and prompt** (two-stage: action → popup → work):
-
-1. The action does steps 1–2 headless, validating early so errors surface as toasts. Then run `exec h plugin pane open --plugin "$MH_ID" --entrypoint prompt --env MH_SRC_PANE=$pane --env MH_SID=$sid --env MH_WS=$ws --env MH_CWD=$cwd --env MH_TAB_LABEL="$(ctx .tab_label)"`. Omit `--placement` so the manifest's `popup` applies (catchup). Don't pass `--target-pane` for a popup; herdr rejects it.
-2. The popup (`lib/panes/prompt.sh`) runs `read -r -p "Tab name [fork]: " name`, then `read -r -p "Initial prompt (optional): " prompt`, using blocking reads. Use the §3.8 `prompt_line` helper if Esc-to-cancel is wanted.
-3. The popup then runs steps 3–6 itself. A popup is not a pane, so creating tabs and starting agents from it is fine; drovr does all its moves from the popup.
-4. To seed the fork with a prompt, either:
-   - pass it to Claude as a positional arg, since `claude [options] [prompt]` is valid (`-- --resume "$sid" --fork-session -n "$name" "$prompt"`, and `-n/--name` sets Claude's session display name, per `claude --help` locally), or
-   - (more robust) after `agent start` returns ready, run `h agent prompt "$new" "$prompt"`. `agent prompt <TARGET> <TEXT> [--wait]` rejects with `agent_blocked` if a dialog is open.
-5. Use `--label "$name"` on `tab create`.
-6. On error, call `die_in_pane` so the popup stays readable. On Esc or empty input, exit 0 silently (drovr treats cancel as success).
-7. Don't invoke another plugin action that opens UI from inside the popup: it returns `ui_busy` (plugin-manager).
+Seeding a fork with a first message is possible either as Claude's positional prompt argument or,
+more robustly, with `agent prompt <TARGET> <TEXT> [--wait]` once `agent start` has returned (it
+rejects with `agent_blocked` while a dialog is open). `my-herdr` asks for a name only.
 
 **`ping` action** (herdr-plus idea): print `env | grep ^HERDR_` and `$HERDR_PLUGIN_CONTEXT_JSON | jq .` to stdout, then check with `herdr plugin log list --plugin my-herdr`. It is a cheap way to discover the real context shape on the installed herdr.
 
 ### 4.5 Keybindings (README section)
 
-```toml
-# ~/.config/herdr/config.toml, then: herdr server reload-config
-[[keys.command]]
-key = "prefix+f"
-type = "plugin_action"
-command = "my-herdr.fork-claude-tab"
-description = "fork Claude session into new tab"
-
-[[keys.command]]
-key = "prefix+shift+f"
-type = "plugin_action"
-command = "my-herdr.fork-claude-tab-named"
-description = "fork Claude session (ask name/prompt)"
-
-[[keys.command]]
-key = "prefix+m"
-type = "plugin_action"
-command = "my-herdr.move-pane-new-tab"
-description = "move pane into new tab"
-```
+`my-herdr` suggests no keys (maintainer decision, `docs/PLAN.md`); its README documents the
+`[[keys.command]]` mechanism with placeholder keys. Keybindings are client-side: reload them with the
+in-app reload (`prefix+shift+r`), not `herdr server reload-config` (`official-docs.md`).
 
 - Keys other plugins suggest (possible conflicts if you install them): `prefix+f` (forkr, catchup, floax), `prefix+m` / `prefix+M` (drovr), `prefix+p` (command-palette, plugin-manager), `prefix+a` (agent-handoff), `prefix+c` (catchup, calebcauthon).
 - **`prefix+c` is herdr's default `new_tab`**.
@@ -818,7 +803,8 @@ description = "move pane into new tab"
 1. Title plus a one-paragraph what/why (and a table of actions, or agent → command).
 2. **Requirements:** herdr ≥ X, `jq`, `claude` on PATH, `herdr integration install claude` (verify with `herdr integration status`).
 3. **Install:** `herdr plugin install <owner>/my-herdr`, or `herdr plugin link /path/to/my-herdr` for local development.
-4. **Keybindings:** TOML blocks plus `herdr server reload-config`.
+4. **Keybindings:** TOML blocks plus the in-app reload (`prefix+shift+r`); several of the studied
+   READMEs say `herdr server reload-config`, which does not reload keybindings.
 5. **Actions:** table of qualified id → behaviour. Include manual invocation: `herdr plugin action invoke my-herdr.<id>`.
 6. **How it works:** numbered steps, naming the herdr CLI calls.
 7. **Configuration and state:** what goes in `$HERDR_PLUGIN_CONFIG_DIR` / `$HERDR_PLUGIN_STATE_DIR`, or "none".
