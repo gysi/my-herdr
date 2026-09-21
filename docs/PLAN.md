@@ -260,13 +260,23 @@ Facts and open risks:
 
 ### Phase 4: pane-to-tab
 
-- [ ] `myherdr/actions/pane_to_tab.py`: focused pane → `pane move <pane> --new-tab --workspace <ws> --no-focus`
-      → check `.result.move_result.changed`, then focus the new tab. `--focus` moves the attached
-      client (official-docs §9.2), so the move and the focus can be one call. Handle "alone in tab"
-      as decided above (no-op with a toast).
-- [ ] Manifest `[[actions]] id = "pane-to-tab"`.
-- [ ] Tests: argv asserted; `changed:false` → toast; missing pane → toast.
-- [ ] **Manual:** live smoke test via `herdr plugin action invoke my-herdr.pane-to-tab`.
+- [x] `myherdr/actions/pane_to_tab.py`: focused pane → `pane move <pane> --new-tab --workspace <ws>
+      --focus` → check `.result.move_result.changed`. `--focus` moves the attached client
+      (official-docs §9.2), so the move and the focus are one call. "Alone in tab" is detected up
+      front via `tab list` `pane_count` and reported instead of mutating.
+      No `--label` is passed, per the maintainer decision on tab naming.
+- [x] Manifest `[[actions]] id = "pane-to-tab"`, `contexts = ["pane"]`.
+- [x] Tests: argv asserted; `changed:false` → toast; alone-in-tab never reaches the move; a failing
+      `tab list` does not block the move; `pane get` fallback for a foreign pane.
+      New fixtures `tab_list.json` and `pane_move.json` so the end-to-end test exercises the success
+      path rather than the mock's generic mutation answer.
+- [x] **Manual:** live smoke test via `herdr plugin action invoke my-herdr.pane-to-tab`, from a shell
+      outside herdr, on a tab split into two panes. Both paths confirmed: the move created a new tab
+      and reported its id, and a second invocation on the pane left alone reported instead of
+      mutating, with `tab list` unchanged afterwards. The new tab came out with herdr's generic
+      numeric label, confirming no `--label` reaches the CLI.
+      Note for later smoke tests: after `pane split`, focus lands on the **new** pane, so the action
+      targets that one rather than the pane the split was invoked from.
 
 ### Phase 5: fork-tab (no prompt)
 
@@ -309,13 +319,34 @@ listing path while the repo is small. The fork phases move to v0.2.0.
 - [x] `CHANGELOG.md` 0.1.0 entry; version `0.1.0` in manifest.
 - [x] Manifest `description` rewritten: it is indexed and shown on the marketplace card, so it must
       not advertise actions that do not exist yet.
-- [ ] Commit and push to `main` (maintainer). The marketplace tracks the **default-branch head**, not
+- [x] Commit and push to `main` (maintainer). The marketplace tracks the **default-branch head**, not
       tags, so whatever is on `main` is what people install.
-- [ ] Add the GitHub topic `herdr-plugin` (+ `herdr`, `claude-code`) for the marketplace listing.
-- [ ] Tag `v0.1.0` for humans; optional GitHub release.
-- [ ] Verify the published path end to end: `herdr plugin unlink my-herdr`, then
+- [x] Add the GitHub topic `herdr-plugin` (+ `herdr`, `claude-code`) for the marketplace listing.
+- [x] Tag `v0.1.0` for humans; optional GitHub release.
+- [x] Verify the published path end to end: `herdr plugin unlink my-herdr`, then
       `herdr plugin install gysi/my-herdr`, then invoke the action. Installing over a linked plugin
       with the same id is refused, so the unlink is required, not optional.
+      Installed and working from GitHub at commit `5364462`; the `ctrl+n` binding survived the switch
+      from linked to installed untouched, because it names the action id, not a path.
+
+**Released. v0.2.0 picks up at Phase 4.** Note for whoever does: `main` is now what users install, so
+a broken commit on `main` is a broken release. There is no `herdr plugin update`, so nothing reaches
+existing users until they reinstall — see "Updating an installed plugin" below.
+
+### Updating an installed plugin
+
+herdr 0.9.1 has **no `plugin update` command and no automatic update check**. `plugin install` pins
+the default-branch head at install time as `source.resolved_commit`, and that commit is frozen until
+someone re-runs `herdr plugin install gysi/my-herdr`, which replaces the managed checkout under
+`~/.config/herdr/plugins/github/<component>`. `--ref` pins a tag, branch or commit instead.
+
+Consequences worth remembering when releasing:
+
+- Pushing to `main` updates the marketplace card within ~30 minutes but reaches **no existing user**.
+- Users get no notification that a new version exists; they compare `resolved_commit` themselves via
+  `herdr plugin list --plugin my-herdr --json`, or just reinstall.
+- A linked checkout behaves differently: scripts are re-read on every invocation, so edits are live,
+  and only a manifest change needs `herdr plugin link .` again.
 
 ## Backlog / ideas
 

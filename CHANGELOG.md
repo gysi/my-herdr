@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `my-herdr.pane-to-tab` action: moves the focused pane, and the process
+  running in it, into a new tab in the same workspace. The new tab is left
+  unnamed so tab-renaming plugins still manage it. A pane that is already alone
+  in its tab is reported instead of moved, and a move herdr declines (a zoomed
+  tab makes it a silent no-op) is reported rather than assumed to have worked.
+
 ## [0.1.0] - 2026-09-21
 
 ### Added

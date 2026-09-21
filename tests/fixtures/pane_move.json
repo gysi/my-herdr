@@ -1,0 +1,31 @@
+{
+  "id": "cli:pane:move",
+  "result": {
+    "move_result": {
+      "changed": true,
+      "reason": null,
+      "previous_pane_id": "w1:p1",
+      "previous_tab_id": "w1:t1",
+      "previous_workspace_id": "w1",
+      "created_tab": {
+        "agent_status": "idle",
+        "focused": true,
+        "label": "work",
+        "number": 3,
+        "pane_count": 1,
+        "tab_id": "w1:t9",
+        "workspace_id": "w1"
+      },
+      "focused_pane_id": "w1:p1",
+      "pane": {
+        "agent_status": "idle",
+        "focused": true,
+        "pane_id": "w1:p1",
+        "tab_id": "w1:t9",
+        "terminal_id": "term_a",
+        "workspace_id": "w1"
+      }
+    },
+    "type": "pane_move"
+  }
+}

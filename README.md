@@ -21,12 +21,13 @@ way.
 | Action | What it does |
 |---|---|
 | `my-herdr.attention-next` | Go to the agent that needs you, or cycle through all agents when none does |
+| `my-herdr.pane-to-tab` | Move the focused pane, and the process in it, into a new tab |
 | `my-herdr.ping` | Write the plugin environment to the plugin log, to verify an install |
 
 Written in Python 3 (standard library only): no dependencies, no build step.
 
-Planned for later versions: forking a Claude Code session into a new tab, with and without a prompt,
-and moving the focused pane into its own tab. See [`docs/PLAN.md`](docs/PLAN.md).
+Planned for later versions: forking a Claude Code session into a new tab, with and without a prompt.
+See [`docs/PLAN.md`](docs/PLAN.md).
 
 ### `attention-next`
 
@@ -48,6 +49,16 @@ This differs from herdr's built-in `open_notification_target`, which jumps to wh
 *currently visible* toast belongs to: that needs toasts enabled and is gone once the toast is. It is
 also why the action is useful with `[ui.toast] delivery = "off"` — with sound left on, a sound tells
 you somebody needs you and this key takes you there, with nothing covering the screen.
+
+### `pane-to-tab`
+
+For the moment a split has outgrown its share of the screen. The focused pane moves into a tab of its
+own and takes its running process with it — the agent keeps going and lands full width.
+
+The new tab keeps herdr's generic name on purpose: a plugin-set label looks like a manual rename to
+tab-renaming plugins, which then leave it alone forever. If the pane is already the only one in its
+tab, nothing happens and it says so, rather than destroying the tab and rebuilding it for the same
+single pane.
 
 ## Keybindings
 

@@ -914,6 +914,9 @@ herdr pane current [--pane ID|--current]
 herdr pane get <pane_id>
 ```
 
+**GOTCHA [local]:** `pane get` takes the id **positionally**, while its neighbours `pane current` and
+`pane process-info` take `--pane ID`. `herdr pane get --pane w1:p1` is a usage error and exits 2.
+
 `pane.current` (verbatim): "returns a single `PaneInfo`. When `caller_pane_id` is present, Herdr returns that pane. When it is omitted, Herdr returns the active focused pane." They "resolve the calling pane instead of another client's focused pane".
 
 **[local]** The response `type` is **`pane_current`**, not `pane_info`:
@@ -1028,5 +1031,6 @@ Request and response shapes:
 20. **There is no `herdr plugin update`.** Reinstall from GitHub. Installing over a locally linked plugin with the same id is refused; `unlink` first.
 21. **`agent_status = "done"` only exists while nobody has looked.** It is durable (measured: >24 minutes) for an unseen agent, but an agent that finishes in a pane you are watching goes straight to `idle` and never passes through `done`. There is no seen field to read instead. See §9.7.
 22. **The claude integration hook needs `HERDR_PANE_ID`.** Without it (a popup has none) the hook exits silently and herdr never learns the session id, even though Claude itself starts fine. See §7.4.
-23. **llms-full.txt inconsistency.** `https://herdr.dev/llms-full.txt` has an older landing-page blurb ("tag your repo to be listed when the marketplace launches"). The versioned `marketplace.mdx` says the marketplace is live at herdr.dev/plugins.
+23. **`pane get` takes its id positionally**, unlike `pane current` and `pane process-info`, which take `--pane ID`. `pane get --pane w1:p1` exits 2. See §9.6.
+24. **llms-full.txt inconsistency.** `https://herdr.dev/llms-full.txt` has an older landing-page blurb ("tag your repo to be listed when the marketplace launches"). The versioned `marketplace.mdx` says the marketplace is live at herdr.dev/plugins.
 
