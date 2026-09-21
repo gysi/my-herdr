@@ -16,6 +16,15 @@ coding agents in herdr.
 
 Written in Python 3 (standard library only): no dependencies, no build step.
 
+## Why this exists
+
+Some of these actions overlap with plugins already on the herdr marketplace. I still write my own,
+because a herdr plugin runs arbitrary code on my machine. I would have to review someone else's plugin
+before installing it, and review it again after every update, since a later release could ship
+malicious code even if the version I checked was fine. These actions are small, and what they give
+me isn't worth that risk or that ongoing review. When I write the plugin myself, I know what it does
+today, and nobody else can change what it does tomorrow.
+
 ## Requirements
 
 - **herdr 0.9.1 or newer.** Developed and tested against 0.9.1.
