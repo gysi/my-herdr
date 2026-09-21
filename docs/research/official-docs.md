@@ -787,7 +787,7 @@ So a Claude started **inside a popup would never register a session**, because p
 - Switching the front-end to an existing session fires **no hook at all**.
 - The daemon inherits the environment of the pane whose Claude spawned it, once, at start, and outlives that pane. Every hook of a daemon-hosted session runs there, so it reports **that** pane, even after it is closed. The daemon also pre-starts spare sessions, which fire `SessionStart` with the same stale pane.
 - The front-end reports only its own startup session, or nothing under `claude agents`. So `agent get` on the pane returns that startup id, or no `agent_session` at all.
-- While a session is running in the background, `claude --resume` on it only offers to **attach**, which keeps it in the daemon. Stopping it (`claude stop <id>`) and then resuming it in a pane restores a normal, correctly reported session. Resuming keeps the session id.
+- While a session is running in the background, `claude --resume` on it only offers to **attach**, which keeps it in the daemon. Stopping it (`claude stop <id>`) and then resuming it in a pane restores a normal, correctly reported session. In that case the session kept its id.
 - herdr still shows such a pane's status and title correctly, because `agent_status` comes from screen detection and the title from the terminal. Only the id is wrong.
 
 Claude Code 2.1.278 has these hook events: `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `PermissionRequest`, `UserPromptSubmit`, `Notification`, `Stop`, `SubagentStart`, `SubagentStop`, `PreCompact`, `PostCompact`, `PreModelSwitch`, `PostModelSwitch`, `SessionStart`, `SessionEnd`. None fires on attach or switch.
@@ -802,15 +802,15 @@ A Claude conversation is saved as `<claude config>/projects/<project dir>/<sessi
 
 So `jq -r '.result.agent.agent_session.value'` gives the Claude session id. `kind` is `"id"` or `"path"`, depending on the agent. For a pane with no detected agent, `agent get <pane>` returns an error; handle a non-zero exit.
 
-**GOTCHA [local]: the id can lag behind the conversation on screen.** When Claude Code resumes a
-conversation it carries it into a **new** session id and leaves a `{"type": "continued-in",
-"continuedInSessionId": ...}` record at the end of the old transcript
-(`~/.claude/projects/<cwd-slug>/<id>.jsonl`). herdr keeps the old id until the hook reports the new
-one, so for a while after a pane is resumed or restored, `agent_session.value` names a transcript that
-stops before the latest turns. Separately, `claude --resume <id>` on a session still open in another
-process can load a **discarded branch** left by a rewind: the transcript keeps both branches, and
-Claude (2.1.278) has no flag to resume at a given message. A fork is only as current as those two
-allow.
+**GOTCHA [local]: the id can lag behind the conversation on screen.** A resume **can** carry the
+conversation into a **new** session id, leaving a `{"type": "continued-in", "continuedInSessionId":
+...}` record at the end of the old transcript (`~/.claude/projects/<cwd-slug>/<id>.jsonl`): seen
+when herdr restored a pane with `claude --resume <id>`. It does not always: resuming a stopped
+background session with `claude -r` kept its id. What decides it is not known. Where herdr still
+holds the old id, `agent_session.value` names a transcript that stops before the latest turns.
+Separately, `claude --resume <id>` on a session still open in another process can load a
+**discarded branch** left by a rewind: the transcript keeps both branches, and Claude (2.1.278) has
+no flag to resume at a given message. A fork is only as current as those two allow.
 
 **`agent start` as an alternative to `pane run`** ([CLI reference][cli-reference]):
 
@@ -1056,8 +1056,8 @@ Request and response shapes:
 21. **`agent_status = "done"` only exists while nobody has looked.** It is durable (measured: >24 minutes) for an unseen agent, but an agent that finishes in a pane you are watching goes straight to `idle` and never passes through `done`. There is no seen field to read instead. See §9.7.
 22. **The claude integration hook needs `HERDR_PANE_ID`.** Without it (a popup has none) the hook exits silently and herdr never learns the session id, even though Claude itself starts fine. See §7.4.
 23. **`pane get` takes its id positionally**, unlike `pane current` and `pane process-info`, which take `--pane ID`. `pane get --pane w1:p1` exits 2. See §9.6.
-24. **`agent_session.value` can be stale or resume a discarded branch.** After a Claude resume the
-    conversation moves to a new id that herdr learns late, and a rewind leaves a branch that
-    `--resume` may pick. See §7.4.
+24. **`agent_session.value` can be stale or resume a discarded branch.** A resume can move the
+    conversation to a new id, background sessions are never tied to a pane, and a rewind leaves a
+    branch that `--resume` may pick. See §7.4.
 25. **llms-full.txt inconsistency.** `https://herdr.dev/llms-full.txt` has an older landing-page blurb ("tag your repo to be listed when the marketplace launches"). The versioned `marketplace.mdx` says the marketplace is live at herdr.dev/plugins.
 
