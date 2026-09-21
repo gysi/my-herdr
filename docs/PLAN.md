@@ -189,30 +189,74 @@ actions because it is the simplest one (no session ids, no popup, no TTY), so it
 dispatcher, `myherdr/herdr.py`, and the test harness. Move it behind the fork-tab phases if those are
 more urgent.
 
-- [ ] `myherdr/actions/attention_next.py`: `agent list` → filter/sort in Python → `agent focus <pane_id>`.
+- [x] `myherdr/actions/attention_next.py`: `agent list` → filter/sort in Python → `agent focus <pane_id>`.
       Order: `blocked` first, then `done`, each oldest `state_change_seq` first. Skip the pane the key
       was pressed in (`HERDR_PANE_ID`, else context `focused_pane_id`). No candidate → toast
       "no agent waiting". Works across workspaces; no workspace filter.
-- [ ] Cursor file (JSON) in `$HERDR_PLUGIN_STATE_DIR`: remember the pane last jumped to, so pressing the key
+      Signature confirmed live (read-only `--help`): `herdr agent focus <target>`, target = pane id
+      or agent name. Ties (same status and `state_change_seq`) break on `pane_id`, so the order a
+      repeated press walks is stable. Any agent kind qualifies, not just Claude.
+- [x] Cursor file (JSON) in `$HERDR_PLUGIN_STATE_DIR`: remember the pane last jumped to, so pressing the key
       again moves on instead of bouncing back. Needed because focusing a `blocked` agent does not
       unblock it, so it stays a candidate. Reset the cursor when the entry is gone or the candidate
       set changed.
-- [ ] Manifest `[[actions]] id = "attention-next"`.
-- [ ] Tests with fixtures: blocked before done; oldest first; current pane skipped; cursor advances and
+      Shape: `{"pane_id": ..., "queue": [sorted pane ids]}`. `queue` is the signature that decides
+      reset-or-advance, sorted so that a reordering (an agent re-blocking) is not mistaken for a new
+      queue. Written only *after* a successful `agent focus`, so a failed jump cannot make the next
+      press skip that agent. Every read and write is best-effort: no state dir, an unwritable file or
+      a corrupt one costs at most one repeated jump, never the jump itself.
+- [x] Manifest `[[actions]] id = "attention-next"`.
+- [x] Tests with fixtures: blocked before done; oldest first; current pane skipped; cursor advances and
       wraps; no candidates → toast; candidates in several workspaces; malformed/empty `agent list`.
-- [ ] **Manual:** live smoke test with at least two waiting agents in different workspaces.
+      `tests/test_attention_next.py`, 31 tests: selection, cursor arithmetic, cursor file, `main()`
+      against a patched `run()`, and four end-to-end runs through `bin/my-herdr`.
+- [x] **Manual:** live smoke test with at least two waiting agents in different workspaces.
+      Verified from outside herdr, across several scenarios and agent priorities: ordering, the
+      cursor advancing and wrapping, and `agent focus` moving the attached client. Invoking from a
+      pane *inside* herdr makes the context report that pane as focused on the next invocation,
+      which looks like focus did not move; it did.
+      Re-verified after the walk fix below, with three agents (one blocked, two finished and read):
+      repeated presses reach all three.
+- [x] **Scope change (maintainer):** when nothing is waiting, cycle through the remaining agents
+      instead of doing nothing, so one binding reaches every agent and no second "next agent" key is
+      needed. Ordering is waiting agents first (as above), then workspace, tab, pane, with digit runs
+      compared as numbers so `p10` follows `p2`. Non-waiting agents deliberately ignore
+      `state_change_seq`: a working agent's sequence keeps moving and would reshuffle the walk
+      between presses.
+      The cursor stores `{"pane_id", "waiting": [sorted waiting pane ids]}` and leaves the ring only
+      when an agent has *newly* started waiting, not when one stops. Consequence to keep in mind:
+      repeated presses do not cycle only among waiting agents — after visiting a blocked agent the
+      next press moves on. That is deliberate; otherwise a persistently blocked agent would make
+      every other agent unreachable from this key.
+- [x] **Bug found by live testing, fixed:** with three agents the walk ping-ponged between two and
+      never reached the third. Cause: the walk was anchored by looking the cursor's pane up in the
+      *filtered* candidate list, but that pane is the one the previous press focused, so it is
+      exactly the pane the next press excludes as "the pane you pressed the key in". The lookup
+      failed every time and the walk restarted at the front. The first smoke test missed it because
+      the action was invoked from a shell pane that was never itself a target, so the anchor stayed
+      in the list.
+      Fix: keep the whole ring (including the current pane), anchor in it, and take the first entry
+      after the anchor that is not the current pane. Status no longer affects the ring order at all;
+      urgency is a separate decision layered on top. `waiting_ids` is computed over the whole ring
+      too, so walking onto a blocked agent does not look like it stopped and restarted waiting.
+      Regression tests: `WalkTest.test_the_walk_reaches_every_agent`,
+      `ActionTest.test_walks_the_whole_ring_as_focus_follows_along`, and
+      `test_a_blocked_agent_does_not_trap_the_walk` at both levels, all of which move the invoking
+      pane to the previous target on each press the way the live action does.
 
 Facts and open risks:
 
 - `herdr agent focus` marks the agent seen, reads do not (official docs §agents). So visiting a `done`
   agent removes it from the queue by itself; only `blocked` needs the cursor.
-- If Phase 0 shows `done` never appears in `agent list`, fall back to an event hook on
-  `pane.agent_status_changed` that maintains its own waiting queue in `$HERDR_PLUGIN_STATE_DIR`
-  ("blocked or finished since last visit"). That also gives a stable oldest-first order and would
-  make the action a pure reader of that file. Decide after Phase 0; don't build the
-  hook speculatively.
+- ~~If Phase 0 shows `done` never appears in `agent list`, fall back to an event hook~~ — not needed:
+  Phase 0 measured `done` as reachable and durable for an unseen agent, so the action reads
+  `agent list` at keypress time and keeps no queue of its own.
 - Filtering and ordering happen in Python over `agent list`. `agent.view.set` is *not* the right tool: it
   changes the sidebar and the next/previous-agent navigation, not a direct jump.
+- Open: the cursor advances on every press, including the press that reaches a `done` agent. That
+  agent then drops out of the queue by itself, which changes the signature and resets to the front —
+  correct, but it means a mixed queue is not walked strictly in order. Revisit only if it annoys in
+  practice.
 
 ### Phase 4: pane-to-tab
 

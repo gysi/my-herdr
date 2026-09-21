@@ -22,3 +22,10 @@ title = "my-herdr: ping"
 description = "Write the plugin environment and invocation context to the plugin log"
 contexts = ["global", "workspace", "pane"]
 command = ["python3", "bin/my-herdr", "ping"]
+
+[[actions]]
+id = "attention-next"
+title = "my-herdr: next agent"
+description = "Focus the agent waiting longest, or cycle through all agents when none is waiting"
+contexts = ["global", "workspace", "pane"]
+command = ["python3", "bin/my-herdr", "attention-next"]
