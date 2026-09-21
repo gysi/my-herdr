@@ -1,0 +1,101 @@
+#!/usr/bin/env python3
+"""Fake `herdr` CLI for the test suite.
+
+Point HERDR_BIN_PATH at this file and the plugin talks to it instead of the real
+herdr, so end-to-end tests exercise the actual argv the plugin builds without a
+running server.
+
+Adapted in spirit from robbyrussell/herdr-ohmyzsh tests/mocks/herdr (MIT).
+
+Environment:
+    HERDR_MOCK_LOG    file every invocation's argv is appended to, one JSON list
+                      per line, so tests can assert exact arguments
+    HERDR_MOCK_DIR    directory of JSON fixtures (default: tests/fixtures)
+    HERDR_MOCK_FAIL   "<command prefix>:<code>[:<message>]", repeatable with ";",
+                      makes matching commands fail the way herdr does
+                      (JSON error on stderr, exit 1)
+
+Responses come from a fixture named after the command, most specific first:
+`agent get w1:p8` tries `agent_get_w1_p8.json` and then `agent_get.json`, so a
+test only needs per-pane fixtures when one run must answer differently for two
+panes. A missing fixture yields `{"result":{}}`, the way a degraded herdr would
+still answer something parseable.
+"""
+import json
+import os
+import re
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_FIXTURES = os.path.join(os.path.dirname(HERE), "fixtures")
+
+# Commands that change state: they get a generic ok, never a fixture, so a test
+# that forgets to add a fixture cannot silently "succeed" with fake data.
+MUTATIONS = (
+    "notification show",
+    "tab create", "tab focus", "tab close",
+    "pane move", "pane run", "pane split",
+    "agent start", "agent rename", "agent focus", "agent prompt",
+    "plugin pane open",
+)
+
+
+def main(argv):
+    log_path = os.environ.get("HERDR_MOCK_LOG")
+    if log_path:
+        with open(log_path, "a") as handle:
+            handle.write(json.dumps(argv) + "\n")
+
+    words = [a for a in argv if not a.startswith("-")]
+    command = " ".join(words)
+
+    failure = matching_failure(command)
+    if failure is not None:
+        code, message = failure
+        sys.stderr.write(json.dumps(
+            {"error": {"code": code, "message": message}, "id": "cli:mock"}) + "\n")
+        return 1
+
+    fixture = load(words)
+    if fixture is None:
+        # A mutation with no fixture still has to answer like herdr does; a
+        # read with no fixture answers empty rather than inventing state.
+        is_mutation = any(command.startswith(p) for p in MUTATIONS)
+        fixture = {"id": "cli:mock",
+                   "result": {"type": "ok"} if is_mutation else {}}
+    print(json.dumps(fixture))
+    return 0
+
+
+def load(words):
+    """Most specific fixture wins: `agent get w1:p8` -> `agent_get_w1_p8`, then `agent_get`."""
+    directory = os.environ.get("HERDR_MOCK_DIR") or DEFAULT_FIXTURES
+    for size in range(len(words), 0, -1):
+        name = re.sub(r"[^A-Za-z0-9]+", "_", " ".join(words[:size]))
+        path = os.path.join(directory, name + ".json")
+        try:
+            with open(path) as handle:
+                return json.load(handle)
+        except (IOError, OSError):
+            continue
+    return None
+
+
+def matching_failure(command):
+    spec = os.environ.get("HERDR_MOCK_FAIL")
+    if not spec:
+        return None
+    for rule in spec.split(";"):
+        if not rule.strip():
+            continue
+        parts = rule.split(":", 2)
+        prefix = parts[0].strip()
+        if command.startswith(prefix):
+            code = parts[1] if len(parts) > 1 else "mock_failure"
+            message = parts[2] if len(parts) > 2 else "mock failure for %r" % prefix
+            return code, message
+    return None
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

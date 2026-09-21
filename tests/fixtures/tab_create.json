@@ -1,0 +1,25 @@
+{
+  "id": "cli:tab:create",
+  "result": {
+    "root_pane": {
+      "agent_status": "unknown",
+      "cwd": "/home/user/project",
+      "focused": false,
+      "pane_id": "w1:p9",
+      "revision": 1,
+      "tab_id": "w1:t9",
+      "terminal_id": "term_new",
+      "workspace_id": "w1"
+    },
+    "tab": {
+      "agent_status": "unknown",
+      "focused": false,
+      "label": "",
+      "number": 9,
+      "pane_count": 1,
+      "tab_id": "w1:t9",
+      "workspace_id": "w1"
+    },
+    "type": "tab_created"
+  }
+}

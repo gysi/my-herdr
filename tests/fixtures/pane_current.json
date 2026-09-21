@@ -1,0 +1,27 @@
+{
+  "id": "cli:pane:current",
+  "result": {
+    "pane": {
+      "agent": "claude",
+      "agent_session": {
+        "agent": "claude",
+        "kind": "id",
+        "source": "herdr:claude",
+        "value": "11111111-2222-3333-4444-555555555555"
+      },
+      "agent_status": "idle",
+      "cwd": "/home/user/project",
+      "focused": true,
+      "foreground_cwd": "/home/user/project",
+      "label": "project",
+      "pane_id": "w1:p1",
+      "revision": 2,
+      "tab_id": "w1:t1",
+      "terminal_id": "term_aaaaaaaaaaaaaa",
+      "terminal_title": "project",
+      "terminal_title_stripped": "project",
+      "workspace_id": "w1"
+    },
+    "type": "pane_current"
+  }
+}

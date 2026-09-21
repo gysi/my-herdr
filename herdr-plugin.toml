@@ -1,0 +1,24 @@
+# my-herdr — a herdr plugin bundling small, independent actions.
+#
+# Keybindings are NOT declared here: herdr does not bind keys from a manifest.
+# See README "Keybindings" for the [[keys.command]] blocks to add to
+# ~/.config/herdr/config.toml yourself.
+#
+# Commands are argv arrays that herdr runs WITHOUT a shell, from the plugin
+# root. Relative paths resolve from the plugin root (herdr >= 0.7.5).
+
+id = "my-herdr"                 # lowercase and dot-free: clean state dirs, unambiguous qualified ids
+name = "my-herdr"
+version = "0.1.0"
+min_herdr_version = "0.9.1"     # current stable; `agent focus` moves the client only from 0.9.1 on
+description = "Small herdr actions: fork a Claude Code session into a new tab, move a pane into a new tab, jump to the agent that needs attention."
+platforms = ["linux", "macos"]
+
+# ---- actions: headless, no TTY, cwd = plugin root, output -> herdr plugin log list ----
+
+[[actions]]
+id = "ping"
+title = "my-herdr: ping"
+description = "Write the plugin environment and invocation context to the plugin log"
+contexts = ["global", "workspace", "pane"]
+command = ["python3", "bin/my-herdr", "ping"]

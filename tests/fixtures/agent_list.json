@@ -1,0 +1,68 @@
+{
+  "id": "cli:agent:list",
+  "result": {
+    "agents": [
+      {
+        "agent": "claude",
+        "agent_status": "idle",
+        "cwd": "/home/user/a",
+        "focused": false,
+        "foreground_cwd": "/home/user/a",
+        "pane_id": "w1:p1",
+        "revision": 2,
+        "state_change_seq": 100,
+        "tab_id": "w1:t1",
+        "terminal_id": "term_a",
+        "terminal_title": "a",
+        "terminal_title_stripped": "a",
+        "workspace_id": "w1"
+      },
+      {
+        "agent": "claude",
+        "agent_status": "blocked",
+        "cwd": "/home/user/b",
+        "focused": false,
+        "foreground_cwd": "/home/user/b",
+        "pane_id": "w1:p2",
+        "revision": 5,
+        "state_change_seq": 300,
+        "tab_id": "w1:t2",
+        "terminal_id": "term_b",
+        "terminal_title": "b",
+        "terminal_title_stripped": "b",
+        "workspace_id": "w1"
+      },
+      {
+        "agent": "claude",
+        "agent_status": "done",
+        "cwd": "/home/user/c",
+        "focused": false,
+        "foreground_cwd": "/home/user/c",
+        "pane_id": "w2:p1",
+        "revision": 7,
+        "state_change_seq": 200,
+        "tab_id": "w2:t1",
+        "terminal_id": "term_c",
+        "terminal_title": "c",
+        "terminal_title_stripped": "c",
+        "workspace_id": "w2"
+      },
+      {
+        "agent": "claude",
+        "agent_status": "working",
+        "cwd": "/home/user/d",
+        "focused": true,
+        "foreground_cwd": "/home/user/d",
+        "pane_id": "w2:p2",
+        "revision": 9,
+        "state_change_seq": 400,
+        "tab_id": "w2:t2",
+        "terminal_id": "term_d",
+        "terminal_title": "d",
+        "terminal_title_stripped": "d",
+        "workspace_id": "w2"
+      }
+    ],
+    "type": "agent_list"
+  }
+}
