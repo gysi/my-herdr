@@ -97,6 +97,12 @@ Both of those files need their **executable bit** kept in git; the wrapper repor
   creating/closing/moving real tabs or panes. Unit tests must use the mock, never a live herdr.
 - Manual smoke tests against the live herdr are done **with the user**, one action at a time.
 - Tick checkboxes in `docs/PLAN.md` as tasks complete; add discovered follow-ups there.
+- **Documents state what is true now, not how it got there.** When a decision changes, rewrite the
+  entry so it reads as if it had always said that, and delete what it replaced. Don't add "changed
+  from X", "previously Y", "note: this used to be Z", or a revision log to `PLAN.md`, `README.md`,
+  `AGENTS.md` or the research notes. Git already holds the history; a second copy in prose only goes
+  stale and contradicts the lines around it. `CHANGELOG.md` is the one exception, and it records
+  user-visible releases, not the path the implementation took.
 - Bump `version` in `herdr-plugin.toml` and add a `CHANGELOG.md` entry for every user-visible change.
 - The repo is **public** (github.com/gysi/my-herdr). Never commit secrets, session ids, or personal
   paths in examples. Use placeholders.

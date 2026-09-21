@@ -21,13 +21,12 @@ way.
 | Action | What it does |
 |---|---|
 | `my-herdr.attention-next` | Go to the agent that needs you, or cycle through all agents when none does |
+| `my-herdr.fork-tab` | Fork the focused pane's Claude Code session into a new tab |
+| `my-herdr.fork-tab-ask` | The same, asking for the new tab's name first |
 | `my-herdr.pane-to-tab` | Move the focused pane, and the process in it, into a new tab |
 | `my-herdr.ping` | Write the plugin environment to the plugin log, to verify an install |
 
 Written in Python 3 (standard library only): no dependencies, no build step.
-
-Planned for later versions: forking a Claude Code session into a new tab, with and without a prompt.
-See [`docs/PLAN.md`](docs/PLAN.md).
 
 ### `attention-next`
 
@@ -49,6 +48,62 @@ This differs from herdr's built-in `open_notification_target`, which jumps to wh
 *currently visible* toast belongs to: that needs toasts enabled and is gone once the toast is. It is
 also why the action is useful with `[ui.toast] delivery = "off"` — with sound left on, a sound tells
 you somebody needs you and this key takes you there, with nothing covering the screen.
+
+### `fork-tab`
+
+For the moment you want to try something without losing where you are. The Claude Code session in the
+focused pane is forked into a new tab: the fork starts with the whole conversation, and the session
+you forked from carries on untouched.
+
+The new tab opens in the same workspace and the same directory — Claude keys its sessions by project
+directory, so a fork started anywhere else would not find the session to resume. You land in it
+straight away and watch the fork come up, rather than waiting on the old pane for a replay you cannot
+see. A fork that fails to start takes its tab with it and puts you back where you pressed the key,
+rather than leaving an empty shell behind.
+
+The tab keeps herdr's generic name, for the same reason `pane-to-tab` does. To name it, use
+`fork-tab-ask`.
+
+It needs herdr's Claude integration: `herdr integration install claude`, which is how herdr learns a
+session's id in the first place. Without it — or in a session that started before it was installed —
+the action says so and does nothing.
+
+The fork resumes the session from what Claude has saved, under the id herdr holds for the pane. A
+session with nothing saved yet — one that has not had its first message — cannot be forked, and the
+action says so at once instead of opening a tab for a fork that cannot start.
+
+herdr learns a session's id when Claude **starts** in the pane, so the session has to run there:
+`claude`, `claude -c`, or `claude -r` and pick it from the list (run it from the project's
+directory, or choose "all projects"). A **background session** cannot be forked. Sessions started
+with `claude --bg`, opened through `claude agents`, or switched to inside Claude run in Claude's own
+background service, detached from any pane: herdr still shows their status, but never learns their
+id. While such a session is running, `claude -r` only offers to *attach* to it, which leaves it in
+the background. Stop it first (`claude stop <id>`, or from `claude agents`); the conversation is
+kept, and `claude -r` then resumes it in the pane, where it can be forked.
+
+A pane in that state is refused, or, if herdr still holds the id the pane started with, the fork
+starts from that session instead of the one on screen. Every fork writes the id it used to the
+plugin log (`fork: <pane> runs claude session <id> …`), so a mismatch with `/status` in that Claude
+is easy to spot.
+
+Right after a rewind, the fork may also start from the discarded branch: Claude has no way to resume
+at a particular message.
+
+### `fork-tab-ask`
+
+`fork-tab` with a name, the way herdr's own new tab asks for one. A small popup asks for the tab
+name: **Enter** forks, **Esc** cancels, and an empty name forks with herdr's default name. The name
+labels the tab and becomes the Claude session's name, so it is also what `claude --resume` lists.
+
+The pane is checked before the popup opens, so a pane that cannot be forked is reported straight
+away rather than after you have typed a name. Once you press Enter the popup closes at once and
+herdr runs `fork-tab` with that name, so you watch the fork come up in the new tab exactly as with
+`fork-tab`, and its output lands in the plugin log like every other action's.
+
+herdr actions take no arguments, so the name travels as a short-lived `fork-request.json` in the
+plugin state directory. It is used once, ignored after ten seconds, and removed as it is read.
+
+A named tab is left alone by tab-renaming plugins: that is what a name you chose should mean.
 
 ### `pane-to-tab`
 
@@ -114,7 +169,7 @@ herdr plugin log list --plugin my-herdr --limit 5
 way to confirm an install is wired up.
 
 A failed action also sends a notification, which is invisible if you have `[ui.toast] delivery =
-"off"`; the sound still plays, and the log always has the detail.
+"off"`; the sound still plays, and the log has the detail.
 
 ## For contributors / agents
 

@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-21
+
+### Added
+
+- `my-herdr.fork-tab` action: forks the Claude Code session in the focused pane
+  into a new tab, conversation included, leaving the original session running.
+  The tab opens in the same workspace and directory and is focused immediately,
+  so the fork is watched coming up rather than waited out on the old pane. A
+  fork that does not start closes its tab again and restores focus. Requires
+  `herdr integration install claude`, which is how herdr learns a session's id;
+  without it the action says so and changes nothing. A session with no saved
+  conversation yet (no first message) is refused at once, before any tab is
+  created. Every fork logs the pane and the session id it used. Background
+  Claude sessions (`claude --bg`, `claude agents`) cannot be forked, because
+  herdr cannot link them to a pane; the README shows how to bring one back
+  into a pane first.
+- `my-herdr.fork-tab-ask` action: the same fork, asking for the tab's name
+  first in a small popup (Enter forks, Esc cancels, an empty name keeps herdr's
+  default). The name labels the tab and names the Claude session. The popup
+  closes as soon as the name is entered and herdr runs `fork-tab` with it, so
+  the fork comes up in the new tab and is logged like any other action.
+
 ## [0.2.0] - 2026-09-21
 
 ### Added
@@ -34,6 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Test harness: `unittest` suite with a fake `herdr` CLI and manifest
   validation, all run locally by `make check`.
 
-[Unreleased]: https://github.com/gysi/my-herdr/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/gysi/my-herdr/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/gysi/my-herdr/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/gysi/my-herdr/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/gysi/my-herdr/releases/tag/v0.1.0

@@ -17,6 +17,10 @@ MOCK = os.path.join(TESTS, "mocks", "herdr")
 FIXTURES = os.path.join(TESTS, "fixtures")
 DISPATCHER = os.path.join(ROOT, "bin", "my-herdr")
 
+#: A HOME with nothing in it, so no test reads the real ~/.claude of whoever
+#: runs the suite. Unit tests put it in the environment they patch in.
+NO_HOME = os.path.join(TESTS, "no-such-home")
+
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
@@ -87,13 +91,29 @@ class EndToEndCase(unittest.TestCase):
             "HERDR_PLUGIN_ID": "my-herdr",
             "HERDR_PLUGIN_ROOT": ROOT,
             "HERDR_PLUGIN_STATE_DIR": self.tmp,
+            # A fresh home per test: nothing of the developer's leaks in, and a
+            # test can build a Claude store under it (see claude_store()).
+            "HOME": os.path.join(self.tmp, "home"),
         })
-        env.update(kwargs.pop("env", {}))
+        # A value of None removes the variable, so a test can assert on what
+        # happens without one even if the developer's own shell exports it.
+        for key, value in kwargs.pop("env", {}).items():
+            if value is None:
+                env.pop(key, None)
+            else:
+                env[key] = value
         return subprocess.run(
             [sys.executable, DISPATCHER] + [str(a) for a in args],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             universal_newlines=True, env=env, timeout=30,
             input=kwargs.pop("stdin", ""), **kwargs)
+
+    def claude_store(self, *session_ids):
+        """A Claude config under this test's HOME holding the given sessions."""
+        project = os.path.join(self.tmp, "home", ".claude", "projects", "-home-user-project")
+        os.makedirs(project)
+        for session_id in session_ids:
+            open(os.path.join(project, session_id + ".jsonl"), "w").close()
 
     def herdr_calls(self):
         """Every argv the plugin sent to the fake herdr, in order."""

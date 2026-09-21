@@ -141,9 +141,9 @@ class PaneTest(unittest.TestCase):
 
     def test_panes_resolve_against_the_panes_package(self):
         problems = check_manifest.check(manifest(panes=[
-            {"id": "fork-prompt", "title": "t",
-             "command": ["python3", "bin/my-herdr", "pane", "fork-prompt"]}]))
-        self.assertTrue(any("myherdr/panes/fork_prompt.py" in p for p in problems))
+            {"id": "no-such-prompt", "title": "t",
+             "command": ["python3", "bin/my-herdr", "pane", "no-such-prompt"]}]))
+        self.assertTrue(any("myherdr/panes/no_such_prompt.py" in p for p in problems))
 
 
 class LinkHandlerTest(unittest.TestCase):

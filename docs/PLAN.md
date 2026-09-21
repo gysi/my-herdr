@@ -8,8 +8,7 @@ It describes intent, not shipped behaviour: the README is what users should read
 
 1. **fork-tab**: fork the Claude Code session of the focused pane into a **new tab**. The fork has the
    full conversation context; the original session is unaffected.
-2. **fork-tab (ask)**: same, but a popup asks for a **tab name** and an optional **initial prompt**, so
-   the fork starts working right away.
+2. **fork-tab-ask**: same, but a popup asks for the new **tab's name** first, like herdr's own new tab.
 3. **pane-to-tab**: move the focused pane (with its running process) into a **new tab**.
 4. **attention-next**: one key jumps to an agent that is waiting for input or finished unread,
    anywhere in the session, without depending on a visible notification.
@@ -45,7 +44,7 @@ Backlog).
 | `min_herdr_version` | `"0.9.1"`, the current stable herdr. Older releases are out of scope: `agent focus` and `pane move --focus` only move the attached client from 0.9.1 on. |
 | Structure | `bin/my-herdr` (executable, `#!/usr/bin/env python3`, dispatcher) + package `myherdr/`: `herdr.py` (CLI wrapper `run()`/`run_json()`), `context.py` (env + `HERDR_PLUGIN_CONTEXT_JSON`), `errors.py`, `actions/<id>.py`, `panes/<id>.py`. One module per action, each exposing `main(args)`. |
 | Interactive input | popup plugin pane declared in manifest (`placement = "popup"`), opened by the action with `--env` |
-| Fork launch | `herdr agent start <tmp-name> --kind claude --pane <new> -- --resume <sid> --fork-session -n <name> [prompt]`, then `agent rename --clear` |
+| Fork launch | `herdr agent start <tmp-name> --kind claude --pane <new> -- --resume <sid> --fork-session [-n <name>]`, then `agent rename --clear` |
 | Errors | one exception type (`MyHerdrError`): headless actions catch it → `herdr notification show` + stderr log; popups catch it → message + "press Enter" |
 | Tests | `unittest` (stdlib). Unit tests patch `myherdr.herdr.run`; a few end-to-end tests run `bin/my-herdr` with `HERDR_BIN_PATH` pointed at a fake `herdr` script that logs argv and serves JSON fixtures |
 | Lint | **none**, and no CI. `make check` runs a syntax gate (`compileall` + `py_compile` for the extensionless files), the `tomllib` manifest check and the tests. |
@@ -69,7 +68,7 @@ plugins is `dmangla3/herdr-fork-from-message`.
 - [x] **pane-to-tab when the pane is alone in its tab**: **no-op with a toast.** Detect it up front
   (`pane list`/`tab` pane_count) and show "pane is already alone in its tab" instead of mutating, so the
   tab bar does not churn.
-- [x] **Fork tab label**: an **explicit name always wins** (`fork-tab (ask)`, or a future CLI arg). When
+- [x] **Fork tab label**: an **explicit name always wins** (`fork-tab-ask`, or a future CLI arg). When
   no name is given, pass **no `--label` at all**, so the tab keeps herdr's generic default name and
   tab-renaming plugins (for example `kryptamine/herdr-auto-title`,
   `qu8n/herdr-automatic-rename`) or Claude's own title can take it over. Do **not** invent a
@@ -278,40 +277,109 @@ Facts and open risks:
       Note for later smoke tests: after `pane split`, focus lands on the **new** pane, so the action
       targets that one rather than the pane the split was invoked from.
 
-### Phase 5: fork-tab (no prompt)
+### Phase 5: fork-tab
 
-- [ ] `myherdr/actions/fork_tab.py`: `agent get` → require `agent == "claude"` and
-      `agent_session.kind == "id"` (else toast "run `herdr integration install claude`") →
-      `tab create --workspace --cwd --label --no-focus` → `wait_shell_ready` →
-      `agent start mh-fork-<pid> --kind claude --pane <new> --timeout 60000 -- --resume <sid> --fork-session -n <name>`
-      → `agent rename <new> --clear` → `tab focus`. On failure after tab creation: close the tab.
-      Forward `CLAUDE_CONFIG_DIR` if set (`tab create --env`).
-- [ ] Manifest action `fork-tab`.
-- [ ] Tests with fixtures: happy path argv sequence; non-claude pane; missing session id; agent start failure → tab closed.
-- [ ] **Manual:** live smoke test.
+- [x] `myherdr/fork.py`, `fork_into_new_tab(pane_id, name=None)`, with `myherdr/actions/fork_tab.py`
+      as a thin wrapper around it:
+      `agent get` → require `agent == "claude"` and `agent_session.kind == "id"` (else toast
+      "run `herdr integration install claude`") → `tab create --workspace --cwd [--label] --focus` →
+      `wait_shell_ready` →
+      `agent start mh-fork-<pid> --kind claude --pane <new> --timeout 60000 -- --resume <sid> --fork-session [-n <name>]`
+      → `agent rename <new> --clear`. On failure after tab creation: close the tab **and focus the
+      source pane again**, because closing the focused tab drops the client on whichever tab herdr
+      picks next. Forward `CLAUDE_CONFIG_DIR` if set (`tab create --env`).
+- [x] **Focus:** the tab is focused on creation. `agent start` waits for Claude to replay the
+      session — long enough to notice, too short to do anything else in the old pane — so hiding the
+      new tab until the fork is up reads as lag with nothing to show for the keypress, while watching
+      it boot reads as progress. Focus is not gated on readiness: herdr focuses an ordinary new tab
+      before its shell exists.
+- [x] Manifest action `fork-tab`.
+- [x] Tests with fixtures: happy path argv sequence; non-claude pane; missing session id; agent start
+      failure → tab closed. Also: shell never settles, tab created without a pane, `KeyboardInterrupt`
+      mid-start (all three close the tab and restore focus), `CLAUDE_CONFIG_DIR` forwarding.
+- [x] **Manual:** live smoke test, invoked with the source Claude pane focused (the action reads the
+      pane it was invoked from, so a parked shell would test nothing). Verified: the new tab opens
+      focused and Claude comes up with the forked conversation; the fork reports its **own** session
+      id to herdr, distinct from the source's, so a fork can be forked again; no `mh-fork-*` name is
+      left on any agent.
 
-### Phase 6: fork-tab (ask name and prompt)
+### Phase 6: fork-tab-ask (ask for the tab name)
 
-- [ ] Manifest `[[panes]] id = "fork-prompt"`, `placement = "popup"`, small size, command
+Asks for a **name only**, like herdr's own new tab. No initial prompt: the fork's tab is focused, so
+typing the first message straight into Claude is just as quick and needs no second input.
+
+- [x] Manifest `[[actions]] id = "fork-tab-ask"` and `[[panes]] id = "fork-prompt"`,
+      `placement = "popup"`, 64×8, command
       `["sh","-c","exec \"$HERDR_PLUGIN_ROOT/bin/my-herdr\" pane fork-prompt"]` (the `sh -c` wrapper
       only expands `$HERDR_PLUGIN_ROOT`, because a pane's cwd is not necessarily the plugin root).
-- [ ] `myherdr/actions/fork_tab_ask.py`: same validation as fork-tab (headless, toast errors), then
-      `plugin pane open --plugin my-herdr --entrypoint fork-prompt --env MH_SRC_PANE=… --env MH_SID=… --env MH_WS=… --env MH_CWD=…`.
-- [ ] `myherdr/panes/fork_prompt.py`: `input("Tab name [default]: ")`, `input("Prompt (optional): ")`,
-      empty input / `KeyboardInterrupt` / `EOFError` = cancel (exit 0), then the shared fork routine
-      (reuse Phase 5 code, pass the prompt as Claude's positional arg or via `agent prompt` after start).
-      Errors → message + wait for Enter before exiting.
-- [ ] Put the shared routine in `myherdr/fork.py`: `fork_into_new_tab(sid, ws, cwd, name, prompt=None)`,
-      used by both the headless action and the popup.
-- [ ] Tests: feed stdin to the pane module; cancel path; prompt with spaces, quotes, `$` and newlines
-      (argv lists mean no shell quoting, but assert it anyway).
-- [ ] **Manual:** live smoke test.
+- [x] `myherdr/actions/fork_tab_ask.py`: `fork.claude_agent()` first, so an unforkable pane is a
+      toast before any popup opens, then
+      `plugin pane open --plugin my-herdr --entrypoint fork-prompt --env MH_SOURCE_PANE=<pane>`.
+      Only the pane is passed: the fork re-reads session, workspace and cwd itself.
+- [x] `myherdr/panes/fork_prompt.py`: asks for the name; Enter forks, Esc / Ctrl-C / Ctrl-D cancel
+      (exit 0), an empty name forks unnamed. Errors → message + wait for Enter.
+- [x] **The popup does not run the fork; herdr does.** A popup stays on screen until its process
+      exits, and `agent start` can take seconds, so forking in place would cover the new tab for the
+      whole wait. On Enter the popup writes a request (source pane, name, timestamp) to
+      `$HERDR_PLUGIN_STATE_DIR/fork-request.json` and runs `herdr plugin action invoke
+      my-herdr.fork-tab`, which returns as soon as herdr has started the action, then exits. So the
+      fork is an ordinary `fork-tab` run: launched, logged and given the action environment by herdr,
+      with nothing running outside its view.
+      The file exists because a herdr action takes no parameters: `plugin action invoke` has only
+      `--plugin`, and the socket API's `plugin.action.invoke` accepts just a `context` with fixed
+      fields. `myherdr/fork_request.py` keeps it one-shot: written atomically, claimed by rename so
+      only one run takes it, ignored after 10 s, withdrawn by the popup if the invoke fails. The
+      request names the pane, so the fork does not depend on which pane herdr reports as focused
+      while a popup is open. Without a request, `fork-tab` forks the focused pane unnamed.
+- [x] `myherdr/prompt.py`: a one-line editor in cbreak mode, because `input()` cannot see Esc — the
+      terminal just echoes `^[`. An Esc followed at once by more bytes is an arrow or function key
+      and is swallowed, not taken as cancel. Backspace, Ctrl-U, UTF-8. Without a TTY it falls back to
+      reading a plain line.
+- [x] Tests: the line editor key by key; the action's refusals never opening a popup; `ui_busy`;
+      the popup's request and invoke, cancel and empty-name paths, a name with quotes, `$` and dashes,
+      a failed invoke withdrawing the request; the request file itself (one-shot, age limit,
+      malformed content); `fork-tab` with and without a request, end to end against the fake herdr.
+- [x] **Manual:** live smoke test with a fresh Claude session. Check: the popup closes on Enter; the
+      new tab is focused and named; the fork shows up in `herdr plugin log list` as a `fork-tab` run
+      with `named '<name>'`; `fork-request.json` is gone from the state directory afterwards; closing
+      the popup does not pull focus back to the source pane.
+- [x] **An id with no saved conversation is refused before any tab exists.** Otherwise Claude exits at
+      once with "No conversation found" while `agent start` waits out its 60 s timeout, with the tab
+      showing the error. It happens when a session is forked before its first message (Claude saves
+      nothing until then), and in the stale-id case below. `fork.claude_agent()` checks for
+      `<claude config>/projects/*/<id>.jsonl`, with the config directory resolved as the fork will
+      resolve it (`CLAUDE_CONFIG_DIR`, else `~/.claude`), so it cannot rule out a session the fork
+      would find. No `projects/` directory at all means "cannot tell", and the fork goes ahead. Both
+      actions get it; `fork-tab-ask` refuses before the popup opens. Only the file's existence is
+      read, never its content. Tests run with a fake `HOME`, so they never see the real store.
+- **Known limitation, not worked around:** the fork resumes whatever Claude has on disk for the id
+      herdr holds, which can differ from the conversation on screen in two cases. Right after a
+      rewind, `--resume` of a session still open elsewhere can pick the discarded branch (Claude has
+      no resume-at-message flag). And **background sessions cannot be tied to a pane.** Claude's
+      background-sessions feature (`claude agents`, `claude attach`, switching sessions inside the
+      TUI) hosts sessions in a Claude daemon; the `claude` in the pane is only a front-end. Verified
+      with a temporary probe hook (event, session id, `HERDR_PANE_ID`, process chain per hook):
+      switching to a session fires **no hook at all**; that session's hooks run inside the daemon
+      with the `HERDR_PANE_ID` of whichever pane first spawned it, even after that pane is closed;
+      and the pane itself reports only the front-end's own startup session, or nothing under
+      `claude agents`. herdr still follows such a pane's status and title, because it reads those
+      from the screen, but it never learns the id. So forking works only for a session started in
+      the pane (`claude`, `claude --resume <id>`). Otherwise the check above refuses, or, when herdr
+      still holds a startup id that has a saved conversation, the fork starts from that one. Every
+      fork logs `fork: <pane> runs claude session <id> (saved conversation: …)`, which makes the case
+      visible. The fix has to come from Claude (an event on attach/switch that identifies the
+      front-end, or the session id somewhere herdr's screen detection can read it); nothing on the
+      plugin side can tell which session a front-end shows.
 
 ### Phase 7: docs and release
 
-**v0.1.0 ships `attention-next` and `ping` only.** Releasing before the fork actions was a
-deliberate call: the plugin is useful as it stands, and publishing early exercises the install and
-listing path while the repo is small. The fork phases move to v0.2.0.
+Released in the order the actions became usable, not in phase order: v0.1.0 `attention-next` and
+`ping`, v0.2.0 `pane-to-tab`, v0.3.0 `fork-tab` and `fork-tab-ask`. Publishing early exercised the
+install and listing path while the repo was small.
+
+A release is: version bump in `herdr-plugin.toml`, the `[Unreleased]` CHANGELOG entries moved under
+the new version, the manifest `description` still true of what ships, `make check`, a commit, an
+annotated tag `vX.Y.Z` on it, and both pushed.
 
 - [x] `README.md`: install first, actions table, how `attention-next` works, keybinding TOML block +
       reload, requirements, troubleshooting via the plugin log. Claims only what ships; the fork
@@ -329,9 +397,9 @@ listing path while the repo is small. The fork phases move to v0.2.0.
       Installed and working from GitHub at commit `5364462`; the `ctrl+n` binding survived the switch
       from linked to installed untouched, because it names the action id, not a path.
 
-**Released. v0.2.0 picks up at Phase 4.** Note for whoever does: `main` is now what users install, so
-a broken commit on `main` is a broken release. There is no `herdr plugin update`, so nothing reaches
-existing users until they reinstall — see "Updating an installed plugin" below.
+`main` is what users install, so a broken commit on `main` is a broken release. There is no
+`herdr plugin update`, so nothing reaches existing users until they reinstall — see "Updating an
+installed plugin" below.
 
 ### Updating an installed plugin
 
@@ -354,9 +422,8 @@ Consequences worth remembering when releasing:
 - Shell entry point (`bin/cfork` or `my-herdr fork <name> [prompt]`) so a `cfork`-style shell workflow can use the plugin code.
 - `pane-to-tab (ask)`: popup asks for the new tab's name.
 - `attention-pick`: popup listing every waiting agent (state icon, workspace/tab, title), pick with
-  `1`-`9`, then focus. Shares the popup machinery with fork-tab (ask). **Verify first:** a popup is
-  session-modal and may restore focus to the pane underneath when it closes, which would undo the
-  jump. If it does, focus after the popup exits instead of from inside it.
+  `1`-`9`, then focus. Shares the popup machinery with `fork-tab-ask`. A popup does not take tiled
+  focus, so focusing from inside it sticks when it closes (seen with `fork-tab-ask`).
 - `attention-status`: sidebar/status line token or a `notification show` summary of how many agents
   are blocked vs finished-unread.
 - `setup-keys` action that idempotently adds the suggested keybindings (marker-guarded), opt-in only.

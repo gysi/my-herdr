@@ -36,7 +36,7 @@ MUTATIONS = (
     "tab create", "tab focus", "tab close",
     "pane move", "pane run", "pane split",
     "agent start", "agent rename", "agent focus", "agent prompt",
-    "plugin pane open",
+    "plugin pane open", "plugin action invoke",
 )
 
 

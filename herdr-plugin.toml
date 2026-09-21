@@ -9,12 +9,26 @@
 
 id = "my-herdr"                 # lowercase and dot-free: clean state dirs, unambiguous qualified ids
 name = "my-herdr"
-version = "0.2.0"
+version = "0.3.0"
 min_herdr_version = "0.9.1"     # current stable; `agent focus` moves the client only from 0.9.1 on
-description = "Small herdr actions for working with AI coding agents. One key to reach any agent: jump to whoever is waiting, or walk through the rest."
+description = "Small herdr actions for working with AI coding agents: one key to reach whichever agent needs you, fork a Claude Code session into a new tab, or give a pane a tab of its own."
 platforms = ["linux", "macos"]
 
 # ---- actions: headless, no TTY, cwd = plugin root, output -> herdr plugin log list ----
+
+[[actions]]
+id = "fork-tab"
+title = "my-herdr: fork this Claude session into a new tab"
+description = "Fork the Claude Code session in the focused pane into a new tab, conversation included"
+contexts = ["pane"]
+command = ["python3", "bin/my-herdr", "fork-tab"]
+
+[[actions]]
+id = "fork-tab-ask"
+title = "my-herdr: fork this Claude session into a named tab"
+description = "Ask for a tab name, then fork the Claude Code session in the focused pane into a new tab"
+contexts = ["pane"]
+command = ["python3", "bin/my-herdr", "fork-tab-ask"]
 
 [[actions]]
 id = "pane-to-tab"
@@ -36,3 +50,16 @@ title = "my-herdr: next agent"
 description = "Focus the agent waiting longest, or cycle through all agents when none is waiting"
 contexts = ["global", "workspace", "pane"]
 command = ["python3", "bin/my-herdr", "attention-next"]
+
+# ---- panes: a real terminal, the only way to ask the user something ----
+# A pane's working directory is not necessarily the plugin root, so the command
+# locates the dispatcher through $HERDR_PLUGIN_ROOT; `sh -c` is only there to
+# expand it.
+
+[[panes]]
+id = "fork-prompt"
+title = "my-herdr: name the fork"
+placement = "popup"
+width = 64
+height = 8
+command = ["sh", "-c", "exec \"$HERDR_PLUGIN_ROOT/bin/my-herdr\" pane fork-prompt"]
