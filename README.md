@@ -3,7 +3,18 @@
 A [herdr](https://herdr.dev) plugin: a collection of small, independent actions for working with AI
 coding agents in herdr.
 
-> **Status: work in progress.** See [`docs/PLAN.md`](docs/PLAN.md).
+## Install
+
+```bash
+herdr plugin install gysi/my-herdr
+```
+
+Then bind a key (see [Keybindings](#keybindings)) — herdr cannot bind keys from a plugin manifest,
+so nothing happens until you do.
+
+To work on the plugin instead, clone it and `herdr plugin link .` from the checkout. A linked plugin
+and an installed one cannot share an id, so `herdr plugin unlink my-herdr` before switching either
+way.
 
 ## Actions
 
@@ -12,11 +23,10 @@ coding agents in herdr.
 | `my-herdr.attention-next` | Go to the agent that needs you, or cycle through all agents when none does |
 | `my-herdr.ping` | Write the plugin environment to the plugin log, to verify an install |
 
-Planned: `my-herdr.fork-tab` (fork the Claude Code session in the focused pane into a new tab),
-`my-herdr.fork-tab-ask` (same, but ask for a tab name and an optional prompt) and
-`my-herdr.pane-to-tab` (move the focused pane into its own tab).
-
 Written in Python 3 (standard library only): no dependencies, no build step.
+
+Planned for later versions: forking a Claude Code session into a new tab, with and without a prompt,
+and moving the focused pane into its own tab. See [`docs/PLAN.md`](docs/PLAN.md).
 
 ### `attention-next`
 
@@ -38,13 +48,6 @@ This differs from herdr's built-in `open_notification_target`, which jumps to wh
 *currently visible* toast belongs to: that needs toasts enabled and is gone once the toast is. It is
 also why the action is useful with `[ui.toast] delivery = "off"` — with sound left on, a sound tells
 you somebody needs you and this key takes you there, with nothing covering the screen.
-
-## Installing
-
-```bash
-git clone https://github.com/gysi/my-herdr
-herdr plugin link my-herdr        # or: herdr plugin install gysi/my-herdr
-```
 
 ## Keybindings
 
@@ -82,10 +85,25 @@ today, and nobody else can change what it does tomorrow.
 
 ## Requirements
 
-- **herdr 0.9.1 or newer.** Developed and tested against 0.9.1.
-- **python3 3.9 or newer**, resolvable from the herdr server's `PATH`.
-- For the fork actions: **Claude Code**, plus `herdr integration install claude` so herdr knows the
-  session id to fork.
+- **herdr 0.9.1 or newer.** Developed and tested against 0.9.1. `agent focus` only moves the
+  attached client from that release on, which is what makes the jump work.
+- **python3 3.9 or newer**, resolvable from the herdr server's `PATH` — which is not necessarily the
+  `python3` in your shell.
+
+## Troubleshooting
+
+Actions run headless, so they have no terminal to print to. Everything they write goes to the plugin
+log:
+
+```bash
+herdr plugin log list --plugin my-herdr --limit 5
+```
+
+`my-herdr.ping` writes the whole plugin environment there and changes nothing, so it is the quickest
+way to confirm an install is wired up.
+
+A failed action also sends a notification, which is invisible if you have `[ui.toast] delivery =
+"off"`; the sound still plays, and the log always has the detail.
 
 ## For contributors / agents
 

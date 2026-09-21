@@ -299,13 +299,23 @@ Facts and open risks:
 
 ### Phase 7: docs and release
 
-- [ ] `README.md`: what/why, requirements (herdr ≥ 0.9.1, python3 ≥ 3.9, claude, claude integration), install
-      (`herdr plugin install gysi/my-herdr` / `herdr plugin link`), keybinding TOML blocks + reload,
-      actions table, how it works, logs/troubleshooting, caveats (fork = snapshot of on-disk
-      transcript; session permission grants don't carry over), development, license.
-- [ ] `CHANGELOG.md` 0.1.0 entry; version `0.1.0` in manifest.
-- [ ] Draft commit message(s) and tag suggestion `v0.1.0`.
+**v0.1.0 ships `attention-next` and `ping` only.** Releasing before the fork actions was a
+deliberate call: the plugin is useful as it stands, and publishing early exercises the install and
+listing path while the repo is small. The fork phases move to v0.2.0.
+
+- [x] `README.md`: install first, actions table, how `attention-next` works, keybinding TOML block +
+      reload, requirements, troubleshooting via the plugin log. Claims only what ships; the fork
+      actions are named as planned, not described as available.
+- [x] `CHANGELOG.md` 0.1.0 entry; version `0.1.0` in manifest.
+- [x] Manifest `description` rewritten: it is indexed and shown on the marketplace card, so it must
+      not advertise actions that do not exist yet.
+- [ ] Commit and push to `main` (maintainer). The marketplace tracks the **default-branch head**, not
+      tags, so whatever is on `main` is what people install.
 - [ ] Add the GitHub topic `herdr-plugin` (+ `herdr`, `claude-code`) for the marketplace listing.
+- [ ] Tag `v0.1.0` for humans; optional GitHub release.
+- [ ] Verify the published path end to end: `herdr plugin unlink my-herdr`, then
+      `herdr plugin install gysi/my-herdr`, then invoke the action. Installing over a linked plugin
+      with the same id is refused, so the unlink is required, not optional.
 
 ## Backlog / ideas
 

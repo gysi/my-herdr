@@ -11,7 +11,7 @@ id = "my-herdr"                 # lowercase and dot-free: clean state dirs, unam
 name = "my-herdr"
 version = "0.1.0"
 min_herdr_version = "0.9.1"     # current stable; `agent focus` moves the client only from 0.9.1 on
-description = "Small herdr actions: fork a Claude Code session into a new tab, move a pane into a new tab, jump to the agent that needs attention."
+description = "Small herdr actions for working with AI coding agents. One key to reach any agent: jump to whoever is waiting, or walk through the rest."
 platforms = ["linux", "macos"]
 
 # ---- actions: headless, no TTY, cwd = plugin root, output -> herdr plugin log list ----
