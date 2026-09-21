@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-21
+
 ### Added
 
 - `my-herdr.pane-to-tab` action: moves the focused pane, and the process
@@ -32,5 +34,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Test harness: `unittest` suite with a fake `herdr` CLI and manifest
   validation, all run locally by `make check`.
 
-[Unreleased]: https://github.com/gysi/my-herdr/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/gysi/my-herdr/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/gysi/my-herdr/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/gysi/my-herdr/releases/tag/v0.1.0
