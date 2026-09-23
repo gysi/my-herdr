@@ -15,8 +15,9 @@ is a separate plugin **action** that users bind to a key in their own herdr conf
    plans are historical context, not a queue of work or a specification of current behavior.
 2. `docs/research/official-docs.md`: herdr plugin contract (manifest, env vars, popups,
    keybindings, CLI JSON shapes) for herdr 0.9.1. **Authoritative.**
-3. `docs/research/community-plugins.md`: how existing plugins are built, with recipes, a helper
-   library sketch, testing approach, and a list of pitfalls. Use it for patterns, not as the spec.
+3. `docs/research/community-plugins.md`: observations about other plugins, their patterns, and
+   pitfalls. The original my-herdr recommendations live in the initial development plan as
+   historical context. Use the survey for patterns, not as the spec.
 
 If the research and the live `herdr` CLI disagree, trust the CLI, then update the research note.
 
@@ -26,8 +27,9 @@ If the research and the live `herdr` CLI disagree, trust the CLI, then update th
   `["python3", …]` straight from the checkout. Plugin code must run on **Python 3.9+** (no `tomllib`,
   no `match`, no `X | Y` annotations); only `tests/` may assume newer. Don't add runtime dependencies
   (including `jq`, `fzf`, `gum`) without asking.
-- **No CI and no linter**. Everything runs locally through `make check`.
-  Don't add `.github/workflows/`, `ruff`, or any other tool without asking.
+- **No CI.** Everything runs locally through `make check`, including Ruff from the version
+  pinned in `mise.toml`. Ruff is a development tool, not a plugin dependency.
+  Don't add `.github/workflows/` or additional tools without asking.
 - Target the **current stable herdr, 0.9.1**; `min_herdr_version` matches it. Older releases are not
   supported: `agent focus` and `pane move --focus` only move the attached client from 0.9.1 on. A
   `min_herdr_version` above the running herdr is a hard load failure, so raise it only when the
@@ -35,6 +37,15 @@ If the research and the live `herdr` CLI disagree, trust the CLI, then update th
 - Linux first; don't break macOS on purpose.
 - Every herdr call goes through the wrapper in `myherdr/herdr.py` (`run()` / `run_json()`), which
   uses `HERDR_BIN_PATH` and argv lists, so tests can mock it and nothing needs shell quoting.
+- Use **Google-style docstrings** for functions you add or change: a short summary, an `Args:`
+  entry for every parameter except `self`/`cls`, and `Returns:` / `Raises:` where applicable.
+  Describe what each input means, its expected type when unannotated, and defaults or special
+  values such as `None`.
+  Document return shapes, relevant side effects, and caller-visible errors. Type names alone
+  do not explain a parameter's purpose. Ruff checks missing public docstrings and missing
+  parameter entries in existing `Args:` sections; review must still check missing sections,
+  private helpers, return/error documentation, and whether descriptions are meaningful.
+  Test helpers follow the same convention; descriptive `test_*` methods need no redundant docstring.
 
 ## Key facts that are easy to get wrong
 
@@ -53,8 +64,16 @@ If the research and the live `herdr` CLI disagree, trust the CLI, then update th
 - Keybindings **cannot** be declared in the manifest. Document `[[keys.command]]` blocks
   (`type = "plugin_action"`) in the README.
 - `pane move --new-tab` takes `--label` (not `--tab-label`). Check `.result.move_result.changed`.
-- Claude session id: `herdr agent get <pane>` → `.result.agent.agent_session.value` (needs
-  `herdr integration install claude`). herdr learns it only when Claude **starts** in the pane.
+- Fork actions support **Claude Code and Codex**. Read the session id from `herdr agent get <pane>`
+  → `.result.agent.agent_session.value`; require kind `id` and reject conflicting session-agent
+  metadata. The corresponding integration (`herdr integration install claude` or
+  `herdr integration install codex`) must be installed and the session started or resumed in the
+  pane. Never install integrations automatically.
+- Codex launches with `fork <id>` and validates its own saved conversation; no transcript search
+  or storage precheck. A requested name labels only the herdr tab. Forward `CODEX_HOME` for Codex
+  and `CLAUDE_CONFIG_DIR` for Claude from the action environment; shell-only overrides are not
+  discovered.
+- herdr learns a Claude session id only when Claude **starts** in the pane.
   **Background Claude sessions** (`claude --bg`, `claude agents`, switching sessions inside Claude)
   run in Claude's daemon and are never tied to a pane: herdr shows their status (read from the
   screen) but holds a wrong or no id. A saved conversation is `<claude config>/projects/*/<id>.jsonl`.
@@ -69,13 +88,16 @@ myherdr/herdr.py         herdr CLI wrapper: run(), run_json(), notify(), focused
 myherdr/context.py       env + HERDR_PLUGIN_CONTEXT_JSON
 myherdr/errors.py        MyHerdrError
 myherdr/fork.py          the fork routine shared by fork-tab and fork-tab-ask
+myherdr/fork_agents.py   agent-specific validation, launch arguments, and environment forwarding
 myherdr/fork_request.py  one-shot hand-off of a tab name from the popup to fork-tab
 myherdr/prompt.py        one-line editor for popups (Esc cancels, which input() cannot see)
 myherdr/actions/<id>.py  one module per action, each with main(args)
 myherdr/panes/<id>.py    one module per popup/pane entrypoint
 myherdr/cli.py           dispatcher: routes <action> / pane <entrypoint> to a module
 tests/                   test_*.py (unittest), support.py, mocks/herdr, fixtures/, check_manifest.py
-Makefile                 check / test / syntax / manifest / link / logs
+mise.toml                pinned development tools (Ruff)
+ruff.toml                local Python and docstring lint rules
+Makefile                 check / lint / test / syntax / manifest / link / logs
 docs/                    README.md (index), plans/, research/
 ```
 
@@ -85,7 +107,10 @@ README row. `tests/check_manifest.py` fails if the block and the module disagree
 ## Commands
 
 ```bash
-make check                                 # syntax + manifest + tests: run before every commit
+mise trust                                 # once, after reviewing mise.toml
+mise install                               # install the pinned development tools
+make check                                 # lint + syntax + manifest + tests: before every commit
+make lint                                  # Ruff through mise; no source rewrites
 make test                                  # python3 -m unittest discover -s tests
 python3 -m unittest discover -s tests -v   # same, verbose
 python3 tests/check_manifest.py            # offline manifest validation

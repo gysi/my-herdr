@@ -20,6 +20,14 @@ class RequestTest(unittest.TestCase):
         self.path = os.path.join(self.state, fork_request.FILE_NAME)
 
     def write(self, content):
+        """Replace the pending request file with controlled test data.
+
+        Args:
+            content: Raw string to write verbatim, or a JSON-serializable value to encode.
+
+        Raises:
+            OSError: The temporary request file cannot be written.
+        """
         with open(self.path, "w") as handle:
             handle.write(content if isinstance(content, str) else json.dumps(content))
 

@@ -1,6 +1,5 @@
 """pane-to-tab: the argv sent, and the answers that mean "nothing happened"."""
 import json
-import os
 import unittest
 from unittest import mock
 
@@ -19,11 +18,32 @@ CONTEXT = {
 
 
 def tab(tab_id, pane_count, workspace="w1"):
+    """Build a tab-list entry for move tests.
+
+    Args:
+        tab_id: String ID of the tab being described.
+        pane_count: Number of panes in that tab.
+        workspace: Owning workspace ID string; defaults to w1.
+
+    Returns:
+        Tab dictionary including its location, pane count, and display metadata.
+    """
     return {"tab_id": tab_id, "pane_count": pane_count, "workspace_id": workspace,
             "label": "work", "number": 1, "focused": True, "agent_status": "idle"}
 
 
 def moved(changed=True, reason=None, pane="w1:p1", tab_id="w1:t9"):
+    """Build a successful CLI response describing a pane-move outcome.
+
+    Args:
+        changed: Whether the move changed the layout; defaults to True.
+        reason: No-op reason string, or None when no reason is supplied.
+        pane: Resulting pane ID string; defaults to w1:p1.
+        tab_id: Created tab ID string; defaults to w1:t9.
+
+    Returns:
+        Completed subprocess result containing a JSON move_result envelope.
+    """
     result = {"move_result": {
         "changed": changed,
         "reason": reason,
@@ -44,6 +64,19 @@ class ActionTest(unittest.TestCase):
         }
 
     def run_action(self, *answers, **kwargs):
+        """Run pane-to-tab with mocked CLI responses and record its exit code.
+
+        Args:
+            *answers: Completed subprocess results to replay in call order.
+            **kwargs: Optional env dictionary overriding the isolated action environment;
+                values of None remove variables. Other keys are ignored.
+
+        Returns:
+            Recorder containing the CLI calls; self.exit_code holds the action's result.
+
+        Raises:
+            MyHerdrError: The action cannot resolve or move the source pane.
+        """
         recorder = support.Recorder(*answers)
         env = dict(self.env)
         for key, value in kwargs.pop("env", {}).items():

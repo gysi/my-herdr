@@ -43,6 +43,18 @@ CURSOR_FILE = "attention-next.json"
 
 
 def main(args):
+    """Focus the next agent and persist the position used for the next press.
+
+    Args:
+        args (list[str]): Dispatcher arguments; unused by this headless action.
+
+    Returns:
+        int: 0 after focusing an agent or reporting that there is no other agent.
+
+    Raises:
+        MyHerdrError: herdr cannot list agents or focus the chosen pane. A failed
+            focus does not advance the persisted cursor.
+    """
     ctx = Context()
     here = ctx.pane_id
     agents = ring(herdr.run_json("agent", "list"))
@@ -74,6 +86,13 @@ def ring(result):
     agent started or stopped working. Defensive about the shape, because a
     degraded server answering `{}` should mean "nowhere to go", not a traceback
     in the plugin log.
+
+    Args:
+        result (dict or None): Parsed result of herdr agent list, with an
+            optional ``agents`` list. None represents an unavailable response.
+
+    Returns:
+        list[dict]: Usable agent records sorted by workspace, tab, and pane ID.
     """
     agents = (result or {}).get("agents")
     if not isinstance(agents, list):
@@ -88,6 +107,16 @@ def choose(agents, here, cursor):
 
     `agents` is the whole ring, including `here`; only the returned target is
     guaranteed to be some other pane.
+
+    Args:
+        agents (list[dict]): Complete, position-sorted ring from ring().
+        here (str or None): Invoking pane ID to exclude, or None if unknown.
+        cursor (dict): Previous ``pane_id`` anchor and ``waiting`` ID list;
+            an empty dict starts a fresh walk.
+
+    Returns:
+        dict or None: Newly urgent agent, otherwise the next eligible agent;
+            None when no pane other than here exists.
     """
     if set(waiting_ids(agents)) - set(cursor.get("waiting") or []):
         # Somebody started waiting since the last press. That is news, and news
@@ -99,7 +128,16 @@ def choose(agents, here, cursor):
 
 
 def most_urgent(agents, here):
-    """The agent that has been waiting longest, or None if nobody else is."""
+    """Choose a waiting agent by status, age, then position.
+
+    Args:
+        agents (list[dict]): Agent records containing pane IDs and optional status.
+        here (str or None): Invoking pane ID to exclude, or None if unknown.
+
+    Returns:
+        dict or None: Oldest blocked agent, otherwise oldest done agent;
+            None if no other agent is waiting.
+    """
     waiting = [
         item for item in agents
         if item.get("agent_status") in WAITING and item["pane_id"] != here
@@ -115,6 +153,15 @@ def next_after(agents, anchor, here):
 
     An anchor that has vanished — or none at all, on the first press — starts
     the walk at the top of the ring.
+
+    Args:
+        agents (list[dict]): Complete ring in stable position order.
+        anchor (str or None): Previously selected pane ID, or None on first use.
+        here (str or None): Invoking pane ID, which must never be returned.
+
+    Returns:
+        dict or None: First eligible record after the anchor, wrapping once;
+            None if every record is excluded or the ring is empty.
     """
     pane_ids = [item["pane_id"] for item in agents]
     start = pane_ids.index(anchor) + 1 if anchor in pane_ids else 0
@@ -131,13 +178,26 @@ def waiting_ids(agents):
     Computed over the whole ring, including the current pane, so that walking
     onto a blocked agent does not make it look like it stopped waiting and then
     started again on the way back.
+
+    Args:
+        agents (list[dict]): Complete agent ring, including the invoking pane.
+
+    Returns:
+        list[str]: Sorted pane IDs whose status is blocked or done.
     """
     return sorted(
         item["pane_id"] for item in agents if item.get("agent_status") in WAITING)
 
 
 def _seq(item):
-    """`state_change_seq` as a number; anything unusable sorts as oldest."""
+    """Read an agent's state-change sequence for age ordering.
+
+    Args:
+        item (dict): Agent record with an optional ``state_change_seq`` field.
+
+    Returns:
+        int: Sequence value, or 0 for missing/unusable values so they sort oldest.
+    """
     try:
         return int(item.get("state_change_seq"))
     except (TypeError, ValueError):
@@ -145,7 +205,14 @@ def _seq(item):
 
 
 def _place(item):
-    """Where the agent sits: workspace, then tab, then pane."""
+    """Build a position key for an agent.
+
+    Args:
+        item (dict): Agent record with workspace, tab, and pane IDs.
+
+    Returns:
+        tuple: Natural-sort keys for workspace, tab, and pane, in that order.
+    """
     return (_natural(item.get("workspace_id")), _natural(item.get("tab_id")),
             _natural(item.get("pane_id")))
 
@@ -155,6 +222,13 @@ def _natural(value):
 
     Each part becomes a (number, text) pair so the parts stay comparable with
     each other whichever kind they are.
+
+    Args:
+        value (str or None): herdr ID to split into text and numeric runs;
+            None is treated as an empty string.
+
+    Returns:
+        tuple[tuple[int, str]]: Comparable key with numeric runs ordered as ints.
     """
     return tuple(
         (int(part), "") if part.isdigit() else (-1, part)
@@ -163,12 +237,27 @@ def _natural(value):
 
 
 def cursor_path(ctx):
-    """Where the cursor lives, or None when herdr gave us no state directory."""
+    """Resolve the attention cursor's storage path.
+
+    Args:
+        ctx (Context): Invocation context providing the plugin state directory.
+
+    Returns:
+        str or None: Cursor file path, or None when no state directory is supplied.
+    """
     return os.path.join(ctx.state_dir, CURSOR_FILE) if ctx.state_dir else None
 
 
 def read_cursor(path):
-    """The last jump, or an empty dict. Never raises: the cursor is a convenience."""
+    """Read the last jump, tolerating unavailable or malformed cursor files.
+
+    Args:
+        path (str or None): Cursor file path. None or an empty string skips reading.
+
+    Returns:
+        dict: Stored ``pane_id`` and ``waiting`` fields, or an empty dict when
+            the file cannot be read as a JSON object.
+    """
     if not path:
         return {}
     try:
@@ -180,7 +269,13 @@ def read_cursor(path):
 
 
 def write_cursor(path, pane_id, agents):
-    """Record where we landed and who was waiting at the time. Failure is silent."""
+    """Record the successful jump and waiting agents, ignoring filesystem errors.
+
+    Args:
+        path (str or None): Cursor file path; None or an empty string skips writing.
+        pane_id (str): Pane that herdr successfully focused.
+        agents (list[dict]): Complete agent ring used to record waiting pane IDs.
+    """
     if not path:
         return
     try:

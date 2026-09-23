@@ -10,9 +10,16 @@ class MyHerdrError(Exception):
     """
 
     def __init__(self, message, code=None):
+        """Store a user-facing failure and optional structured error code.
+
+        Args:
+            message (str): Explanation suitable for the plugin log and a toast.
+            code (str or None): herdr CLI error code, or None for plugin errors.
+        """
         super().__init__(message)
         self.message = message
         self.code = code
 
     def __str__(self):
+        """Return the user-facing message as a str."""
         return self.message

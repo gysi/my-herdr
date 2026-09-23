@@ -14,12 +14,21 @@ class CapturedStreams(object):
     """Collects stdout/stderr so a failing dispatch does not spam the test run."""
 
     def __enter__(self):
+        """Replace stdout/stderr with text buffers and return this capture object."""
         self.out, self.err = io.StringIO(), io.StringIO()
         self._saved = (sys.stdout, sys.stderr)
         sys.stdout, sys.stderr = self.out, self.err
         return self
 
     def __exit__(self, *exc):
+        """Restore the original streams without suppressing exceptions.
+
+        Args:
+            *exc: Exception type, value, and traceback supplied by the with statement.
+
+        Returns:
+            False, allowing any exception to propagate.
+        """
         sys.stdout, sys.stderr = self._saved
         return False
 
@@ -84,6 +93,14 @@ class RoutingTest(unittest.TestCase):
         # A broken import in an action is a bug worth a traceback, not a
         # misleading "unknown action".
         def explode(name):
+            """Simulate a dependency import failure inside an action module.
+
+            Args:
+                name: Requested module name; ignored by this stub.
+
+            Raises:
+                ImportError: Always, naming the missing dependency.
+            """
             raise ImportError("No module named 'nonexistent_dependency'",
                               name="nonexistent_dependency")
 
@@ -94,7 +111,23 @@ class RoutingTest(unittest.TestCase):
 
 class ErrorReportingTest(unittest.TestCase):
     def failing_module(self, message="it broke"):
+        """Build an action module that raises a user-facing error.
+
+        Args:
+            message: Error text raised by the entrypoint; defaults to "it broke".
+
+        Returns:
+            Mock module exposing a main(args) entrypoint.
+        """
         def main(args):
+            """Raise the configured action error.
+
+            Args:
+                args: Dispatcher argument list; ignored by this stub.
+
+            Raises:
+                MyHerdrError: Always, with the configured message.
+            """
             raise MyHerdrError(message)
 
         return mock.Mock(main=main)
@@ -126,6 +159,14 @@ class ErrorReportingTest(unittest.TestCase):
     def test_cancelling_a_popup_is_not_a_failure(self):
         # Ctrl-C / Ctrl-D in a prompt means "never mind", not an error.
         def cancel(args):
+            """Simulate cancellation of a popup.
+
+            Args:
+                args: Dispatcher argument list; ignored by this stub.
+
+            Raises:
+                KeyboardInterrupt: Always, simulating Ctrl-C.
+            """
             raise KeyboardInterrupt()
 
         with mock.patch("importlib.import_module", return_value=mock.Mock(main=cancel)):
@@ -134,6 +175,14 @@ class ErrorReportingTest(unittest.TestCase):
 
     def test_interrupting_an_action_reports_the_signal(self):
         def cancel(args):
+            """Simulate interruption of an action.
+
+            Args:
+                args: Dispatcher argument list; ignored by this stub.
+
+            Raises:
+                KeyboardInterrupt: Always, simulating Ctrl-C.
+            """
             raise KeyboardInterrupt()
 
         with mock.patch("importlib.import_module", return_value=mock.Mock(main=cancel)):

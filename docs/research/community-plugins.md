@@ -1,12 +1,15 @@
 # Community herdr plugins: how they are built
 
-> **Reference snapshot, not a maintained document.** A survey of other people's plugins as they
-> looked while this one was being built. The repositories move on; treat every claim about them as
-> "was true once", and check the repository itself before relying on it.
+> **Reference snapshot — recorded 2026-09-21.** A survey of other people's plugins, not a
+> continuously maintained reference. The date identifies the original snapshot, not the last
+> edit. Targeted corrections are welcome and do not change it; update it only after a full
+> re-survey. Check the source repository before relying on a claim.
 
-Research note from building **my-herdr**, a herdr plugin with no build step. It was first planned in Bash + jq and is written in Python (see the note at the top of §4).
+Research note from building **my-herdr**. The original recommendations for this plugin are
+preserved in the [initial development plan](../plans/initial-development.md#original-recommendations)
+as historical design material. This file covers the surveyed plugins and observed patterns.
 
-- Checked against herdr **0.9.1**. The recommendations assume no extra tools: `fzf`, `shellcheck`, `bats` and `gum` are not required.
+- Checked against herdr **0.9.1**. Dependencies mentioned below belong to the surveyed plugins.
 - Sources: shallow clones of the repos in §1, the official docs at https://herdr.dev/docs/plugins/ and https://herdr.dev/docs/marketplace/, and `herdr <cmd> --help` on 0.9.0.
 - License: every repo quoted below is **MIT** unless noted. Two repos have **no LICENSE** (`ogulcancelik/herdr-plugin-examples`, `third774/herdr-last-workspace`), so describe what they do but don't copy their code. Keep attribution when copying MIT snippets (a `# Adapted from <repo>/<path> (MIT)` comment is enough).
 
@@ -235,7 +238,7 @@ fi
 - **Tests:** `tests/run.sh` builds stub `herdr`, `claude` and `codex` executables in `tests/.tmp/bin`. The stub `claude` records argv and PWD; the stub `herdr` serves `pane get` JSON and records `plugin pane open` argv. It asserts the argv. The README Development section: `bash tests/run.sh`, `bash -n scripts/*.sh`, `shellcheck -x scripts/*.sh tests/run.sh`. No CI.
 - **README** is very complete: Requirements, Install, Bind your key, What it declares (table), How it works, Configuration and state, Failure behavior, Notes and caveats, Development, Logs and cleanup, Security summary.
 - **Suggested keys:** `prefix+f`, `prefix+shift+f`, `prefix+c`, `prefix+v`. It warns that **`prefix+c` is herdr's default `new_tab`**.
-- **Inconsistency:** a `fork.sh` comment says it deliberately does NOT pass `--cwd`, because a relative pane command would break, but the README says it does. The lesson: pane commands should use `$HERDR_PLUGIN_ROOT` so `--cwd` is safe (see §5).
+- **Inconsistency:** a `fork.sh` comment says it deliberately does NOT pass `--cwd`, because a relative pane command would break, but the README says it does. The lesson: pane commands should use `$HERDR_PLUGIN_ROOT` so `--cwd` is safe (see §4).
 
 Verbatim (calebcauthon `scripts/common.sh`, MIT):
 
@@ -492,7 +495,8 @@ prompt_line() {
 }
 ```
 
-Version-bump warning job (same repo, `.github/workflows/tests.yml`, MIT). The paths are adapted in §4.8.
+Version-bump warning job (same repo, `.github/workflows/tests.yml`, MIT). The initial
+[testing recommendations](../plans/initial-development.md#a8-testing-approach) adapt its paths.
 
 ```yaml
       - name: Warn when shipped files change without a version bump
@@ -574,7 +578,7 @@ die() {
   - If focused, `plugin pane close`.
   - Otherwise, `pane zoom --on`.
   - Reads the new pane id from `.result.plugin_pane.pane.pane_id`.
-- **Claimed pitfalls (herdr 0.7.1 era):** overlay/zoomed panes are "torn down the instant the invoking keybinding action completes", and `plugin pane open --cwd` "makes the pane exit immediately". Both conflict with other plugins that use overlay plus `--cwd` fine (command-palette, catchup). The likely real cause is relative pane commands breaking under `--cwd` (§5). Treat these as version-specific and verify.
+- **Claimed pitfalls (herdr 0.7.1 era):** overlay/zoomed panes are "torn down the instant the invoking keybinding action completes", and `plugin pane open --cwd` "makes the pane exit immediately". Both conflict with other plugins that use overlay plus `--cwd` fine (command-palette, catchup). The likely real cause is relative pane commands breaking under `--cwd` (§4). Treat these as version-specific and verify.
 - **`scripts/install-keybinding.sh`:** an idempotent append of a `[[keys.command]]` block to `config.toml`, guarded by a marker comment (`# herdr-floax:keybind`). agent-handoff does the same as a `setup-keys` **action** that strips and replaces its own blocks and refuses on key conflicts unless `--force`.
 - The README shows how to find the install root: `herdr plugin list --plugin herdr-floax --json | jq -r '.result.plugins[0].plugin_root'`.
 
@@ -591,286 +595,7 @@ die() {
 
 ---
 
-## 4. Recommendations for my-herdr (Bash + jq, no build)
-
-> **The design sketch this plugin started from, not a description of it.** `my-herdr` is built, in
-> **Python 3, standard library only**; the code, [README](../../README.md), and
-> [AGENTS.md](../../AGENTS.md) describe the current implementation and contributor rules. The
-> [documentation index](../README.md) links to active plans and the historical initial plan.
-> The Bash below still names the planned ids (`fork-claude-tab`, `move-pane-new-tab`), which
-> shipped as `fork-tab`, `fork-tab-ask` and `pane-to-tab`. What remains useful here is the survey of
-> patterns: the herdr call sequences, the helper ideas, and the pitfalls. The project has no CI and
-> no linter, so §4.8's workflow does not apply; its fake-herdr and manifest-check ideas were ported.
-
-### 4.1 Manifest skeleton
-
-```toml
-# herdr-plugin.toml — my-herdr: small herdr actions.
-# Keybindings are NOT declared here (herdr does not bind manifest keys);
-# see README "Keybindings" for [[keys.command]] blocks.
-
-id = "my-herdr"                 # no dots → qualified ids stay unambiguous: my-herdr.<action>
-name = "my-herdr"
-version = "0.1.0"
-min_herdr_version = "0.8.0"     # agent start / pane move used below; local herdr is 0.9.0.
-                                # Too high = hard load failure, so pick the oldest that works.
-description = "Personal herdr actions: fork the focused Claude Code session into a new tab, move the focused pane into a new tab, and more."
-platforms = ["linux", "macos"]
-
-# ---- actions (headless: no TTY, cwd = plugin root, output → plugin log) ----
-
-[[actions]]
-id = "fork-claude-tab"
-title = "Fork Claude session into new tab"
-description = "Resume the focused pane's Claude Code session with --fork-session in a new tab"
-contexts = ["pane"]
-command = ["bash", "bin/my-herdr", "fork-claude-tab"]
-
-[[actions]]
-id = "fork-claude-tab-named"
-title = "Fork Claude session into new tab (ask name/prompt)…"
-contexts = ["pane"]
-command = ["bash", "bin/my-herdr", "fork-claude-tab", "--ask"]
-
-[[actions]]
-id = "move-pane-new-tab"
-title = "Move pane into a new tab"
-contexts = ["pane"]
-command = ["bash", "bin/my-herdr", "move-pane-new-tab"]
-
-[[actions]]
-id = "ping"
-title = "my-herdr: ping (print context to plugin log)"
-contexts = ["global", "workspace", "pane"]
-command = ["bash", "bin/my-herdr", "ping"]
-
-# ---- panes (interactive: real TTY) ----
-# Always locate scripts via $HERDR_PLUGIN_ROOT: when opened with --cwd, the pane's
-# cwd is NOT the plugin root, so relative paths break.
-
-[[panes]]
-id = "prompt"
-title = "my-herdr"
-placement = "popup"
-width = "60%"
-height = 12
-command = ["bash", "-c", "exec bash \"$HERDR_PLUGIN_ROOT/bin/my-herdr\" pane prompt"]
-```
-
-Notes:
-
-- Actions take **no runtime arguments** (catchup README), so every variant, such as "ask vs no ask", is a separate action id passing different argv. forkr and calebcauthon do the same.
-- `contexts` values seen in the wild: `pane`, `tab`, `workspace`, `global`. They control which herdr menus show the action. Keybinding invocation works regardless.
-
-### 4.2 Repo layout
-
-```
-my-herdr/
-  herdr-plugin.toml
-  bin/my-herdr              # dispatcher: sources lib, routes <action> and "pane <entrypoint>"
-  lib/common.sh             # shared helpers (below)
-  lib/actions/fork-claude-tab.sh
-  lib/actions/move-pane-new-tab.sh
-  lib/actions/ping.sh
-  lib/panes/prompt.sh       # popup: read name/prompt, then perform the fork
-  tests/run.sh              # runs tests/test_*.sh
-  tests/lib.sh              # check/check_contains/... (qu8n style) — or bats if preferred
-  tests/mocks/herdr         # fake CLI: logs argv, serves fixtures (ohmyzsh style)
-  tests/fixtures/*.json
-  tests/test_fork.sh tests/test_move.sh tests/test_manifest.sh
-  Makefile                  # test / lint / syntax
-  .github/workflows/ci.yml
-  README.md  LICENSE  CHANGELOG.md
-  docs/research/community-plugins.md
-```
-
-This is the "single dispatcher, many modes" pattern (catchup `run.sh`, automatic-rename, herdr-plus subcommands), with one file per action so the plugin grows cleanly. Adding an action means adding a `[[actions]]` block, a `lib/actions/<id>.sh` defining `action_<id>()` (or a sourced file), a test, and a README row.
-
-### 4.3 Shared helper library (`lib/common.sh`), a synthesis of the plugins above
-
-```bash
-# shellcheck shell=bash
-MH_ID="${HERDR_PLUGIN_ID:-my-herdr}"
-HERDR="${HERDR_BIN_PATH:-herdr}"
-MH_ROOT="${HERDR_PLUGIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-
-h() { "$HERDR" "$@"; }                               # every herdr call goes through here (mockable)
-
-log() { printf 'my-herdr: %s\n' "$*" >&2; }          # ends up in `herdr plugin log list --plugin my-herdr`
-
-notify() {                                          # best-effort toast (forkr/calebcauthon)
-  h notification show "my-herdr" --body "$1" --sound "${2:-none}" >/dev/null 2>&1 || true
-}
-
-die() {                                             # headless failure: log + toast + nonzero
-  log "$1"; notify "$1" request; exit 1
-}
-
-die_in_pane() {                                     # interactive failure: keep popup visible
-  printf '\nmy-herdr: %s\n[press Enter to close]' "$1" >&2
-  read -r _ || true                                 # blocking read; NEVER `read -t` in popups
-  exit 1
-}
-
-need() { command -v "$1" >/dev/null 2>&1 || die "'$1' is required but not on PATH"; }
-
-ctx() {                                             # ctx '.focused_pane_cwd'
-  [ -n "${HERDR_PLUGIN_CONTEXT_JSON:-}" ] || return 0
-  printf '%s' "$HERDR_PLUGIN_CONTEXT_JSON" | jq -r "$1 // empty" 2>/dev/null
-}
-
-focused_pane() {                                    # env → context → live query
-  local p="${HERDR_PANE_ID:-}"
-  [ -n "$p" ] || p="$(ctx .focused_pane_id)"
-  [ -n "$p" ] || p="$(h pane current 2>/dev/null | jq -r '.result.pane.pane_id // empty')"
-  [ -n "$p" ] || return 1
-  printf '%s' "$p"
-}
-
-wait_shell_ready() {                                # adapted from t4t5/herdr-forkr (MIT)
-  local pane="$1" i=0 ready
-  while [ "$i" -lt 50 ]; do
-    ready="$(h pane process-info --pane "$pane" 2>/dev/null | jq -r '
-      .result.process_info
-      | if (.foreground_processes | length) == 1
-           and (.foreground_processes[0].pid == .shell_pid
-                or (.foreground_processes[0].name | test("^(zsh|bash|fish|sh|dash|ksh|nu)$")))
-        then "yes" else "no" end' 2>/dev/null)"
-    [ "$ready" = yes ] && return 0
-    i=$((i + 1)); sleep 0.2
-  done
-  return 1
-}
-
-cfg() { :; }  # optional: copy catchup's config.env reader (§3.5) when a setting is needed
-```
-
-### 4.4 Action recipes
-
-**Move focused pane to new tab** (from drovr's calls):
-
-```bash
-action_move_pane_new_tab() {
-  need jq
-  local pane ws out tab
-  pane="$(focused_pane)" || die "no focused pane"
-  ws="${HERDR_WORKSPACE_ID:-$(ctx .workspace_id)}"
-  [ -n "$ws" ] || ws="$(h pane get "$pane" | jq -r '.result.pane.workspace_id // empty')"
-  out="$(h pane move "$pane" --new-tab --workspace "$ws" --no-focus 2>&1)" || die "pane move failed: $out"
-  [ "$(printf '%s' "$out" | jq -r '.result.move_result.changed')" = true ] || die "herdr refused the move: $out"
-  tab="$(printf '%s' "$out" | jq -r '.result.move_result.pane.tab_id // empty')"
-  [ -n "$tab" ] && h tab focus "$tab" >/dev/null 2>&1 || true
-}
-```
-
-- If the pane is the only one in its tab, the source tab closes (drovr README). Consider refusing or no-oping when `pane list` shows it is alone.
-- `--label NAME` names the new tab. An "ask for name" variant would use the popup flow below.
-
-**Fork Claude into a new tab.** The studied plugins (forkr, fork-from-message) share one sequence,
-which `my-herdr` implements in `myherdr/fork.py`: `agent get` → require `agent == "claude"` and
-`agent_session.kind == "id"` → `tab create --workspace --cwd` (cwd = `foreground_cwd // cwd`, and
-`--env CLAUDE_CONFIG_DIR=…` if set) → wait for the new shell → `agent start <tmp-name> --kind claude
---pane <new> -- --resume <sid> --fork-session [-n <name>]` → `agent rename <new> --clear`, closing
-the tab if the start fails. The rationale is recorded in the
-[initial development plan](../plans/initial-development.md) (Phases 5 and 6): no invented
-`fork: …` label, the tab focused on creation, the saved conversation
-checked before any tab exists, and background Claude sessions refused (`official-docs.md` §7.4).
-
-**Asking for input first** (two-stage: action → popup). The action validates headless, so errors
-surface as toasts, then opens the popup with `plugin pane open --entrypoint … --env …`; omit
-`--placement` so the manifest's `popup` applies (catchup), and don't pass `--target-pane` for a
-popup, herdr rejects it. On Esc or empty input, exit 0 silently (drovr treats cancel as success); on
-error, keep the popup readable until Enter. **Don't do slow work in the popup**: it stays on screen
-until its process exits. drovr does its moves from the popup because a move is instant; a fork
-waits for Claude. Invoking another action from the popup works for actions that open no UI (that is
-how `fork-tab-ask` hands off to `fork-tab`), but one that opens UI gets `ui_busy` (plugin-manager).
-
-Seeding a fork with a first message is possible either as Claude's positional prompt argument or,
-more robustly, with `agent prompt <TARGET> <TEXT> [--wait]` once `agent start` has returned (it
-rejects with `agent_blocked` while a dialog is open). `my-herdr` asks for a name only.
-
-**`ping` action** (herdr-plus idea): print `env | grep ^HERDR_` and `$HERDR_PLUGIN_CONTEXT_JSON | jq .` to stdout, then check with `herdr plugin log list --plugin my-herdr`. It is a cheap way to discover the real context shape on the installed herdr.
-
-### 4.5 Keybindings (README section)
-
-`my-herdr` suggests no keys (see [AGENTS.md](../../AGENTS.md)); its README documents the
-`[[keys.command]]` mechanism with placeholder keys. Keybindings are client-side: reload them with the
-in-app reload (`prefix+shift+r`), not `herdr server reload-config` (`official-docs.md`).
-
-- Keys other plugins suggest (possible conflicts if you install them): `prefix+f` (forkr, catchup, floax), `prefix+m` / `prefix+M` (drovr), `prefix+p` (command-palette, plugin-manager), `prefix+a` (agent-handoff), `prefix+c` (catchup, calebcauthon).
-- **`prefix+c` is herdr's default `new_tab`**.
-- Check `herdr config` or the herdr keyboard docs before choosing. Don't auto-edit config.toml by default; if ever wanted, use a marker-guarded, idempotent `setup-keys` action (floax/agent-handoff pattern).
-
-### 4.6 README sections (consensus of the best READMEs)
-
-1. Title plus a one-paragraph what/why (and a table of actions, or agent → command).
-2. **Requirements:** herdr ≥ X, `jq`, `claude` on PATH, `herdr integration install claude` (verify with `herdr integration status`).
-3. **Install:** `herdr plugin install <owner>/my-herdr`, or `herdr plugin link /path/to/my-herdr` for local development.
-4. **Keybindings:** TOML blocks plus the in-app reload (`prefix+shift+r`); several of the studied
-   READMEs say `herdr server reload-config`, which does not reload keybindings.
-5. **Actions:** table of qualified id → behaviour. Include manual invocation: `herdr plugin action invoke my-herdr.<id>`.
-6. **How it works:** numbered steps, naming the herdr CLI calls.
-7. **Configuration and state:** what goes in `$HERDR_PLUGIN_CONFIG_DIR` / `$HERDR_PLUGIN_STATE_DIR`, or "none".
-8. **Failure behaviour and logs:** toasts, `herdr plugin log list --plugin my-herdr`.
-9. **Notes and caveats:** the fork is a snapshot of the on-disk transcript, and "allow for this session" grants don't carry over (forkr).
-10. **Development:** link, test, lint.
-11. License.
-
-### 4.7 Marketplace and versioning checklist
-
-- Public repo, GitHub topic `herdr-plugin` (also useful: `herdr`, `claude-code`), `herdr-plugin.toml` at the root on the default branch, all required keys present and parseable. Don't make it a fork or archive it, or it won't be listed.
-- Bump `version` in the manifest on every shipped change; the card shows it. Use SemVer, tag `vX.Y.Z`, and optionally auto-create a GitHub release from the CHANGELOG section (qu8n `release.yml`).
-- Users update by re-running `herdr plugin install owner/repo`; there is no `update` command.
-- A LICENSE file (MIT is universal among studied plugins).
-
-### 4.8 Testing approach
-
-- **Fake herdr.** `tests/mocks/herdr` logs `"$*"` to `$HERDR_MOCK_LOG` and serves `$HERDR_MOCK_DIR/*.json` fixtures (§3.7). Run the action with `HERDR_BIN_PATH=$PWD/tests/mocks/herdr HERDR_PLUGIN_CONTEXT_JSON='{...}' HERDR_PANE_ID=w1:p2 bash bin/my-herdr move-pane-new-tab` and assert the logged argv (for example `pane move w1:p2 --new-tab --workspace w1 --no-focus`). For popups, feed stdin: `printf 'myname\nhello\n' | bash bin/my-herdr pane prompt`.
-- **Harness.** Every studied Bash plugin avoids bats in favour of ~50 lines of `check`/`check_contains` (qu8n `tests/lib.sh`, calebcauthon `tests/run.sh`). bats-core is fine if preferred, but it is an extra dependency; CI would need `apt-get install bats` or `bats-core/bats-action`.
-- **Static checks.** Run `bash -n` on every script (including extensionless `bin/my-herdr` and the mock) and `shellcheck -x` with `# shellcheck source=` directives. Pin the shellcheck version in CI, because findings differ between 0.9 and 0.11 (qu8n).
-- **Manifest check** (no studied Bash plugin does this; herdr-plus does it in Go). A small python3 `tomllib` script (Python 3.11+) can check:
-  ```python
-  import tomllib, re, sys
-  m = tomllib.load(open("herdr-plugin.toml", "rb"))
-  for k in ("id", "name", "version", "min_herdr_version"):
-      assert isinstance(m.get(k), str) and m[k], f"missing {k}"
-  assert re.fullmatch(r"[A-Za-z0-9.:_-]+", m["id"])
-  for kind in ("actions", "panes", "link_handlers"):
-      ids = [e["id"] for e in m.get(kind, [])]
-      assert len(ids) == len(set(ids)), f"duplicate {kind} ids"
-      for i in ids: assert re.fullmatch(r"[A-Za-z0-9:_-]+", i), f"bad id {i}"
-  for e in m.get("actions", []) + m.get("panes", []):
-      assert isinstance(e["command"], list) and e["command"], "command must be argv array"
-  print("manifest ok")
-  ```
-  Locally, `herdr plugin link .` is the authoritative validator.
-- **CI** (`.github/workflows/ci.yml`), a synthesis of qu8n and plugin-manager:
-  ```yaml
-  name: ci
-  on: { push: { branches: [main] }, pull_request: {} }
-  permissions: { contents: read }
-  jobs:
-    test:
-      strategy: { fail-fast: false, matrix: { os: [ubuntu-latest] } }   # add macos-latest for bash 3.2 if ever needed
-      runs-on: ${{ matrix.os }}
-      steps:
-        - uses: actions/checkout@v4
-        - run: sudo apt-get update && sudo apt-get install -y jq shellcheck
-        - name: Syntax
-          run: for f in bin/my-herdr lib/*.sh lib/*/*.sh tests/*.sh tests/mocks/herdr; do bash -n "$f"; done
-        - name: Shellcheck
-          run: shellcheck -x -s bash bin/my-herdr lib/*.sh lib/*/*.sh tests/*.sh tests/mocks/herdr
-        - name: Manifest
-          run: python3 tests/check_manifest.py
-        - name: Tests
-          run: bash tests/run.sh
-  ```
-  Optionally add plugin-manager's "shipped files changed without a version bump" warning job (§3.8), with its `git diff` paths changed from `bin herdr-plugin.toml` to `bin lib herdr-plugin.toml`.
-- **Manual smoke test:** `herdr plugin link .`, `herdr plugin action list --plugin my-herdr`, `herdr plugin action invoke my-herdr.ping`, `herdr plugin log list --plugin my-herdr`.
-
----
-
-## 5. Pitfalls observed
+## 4. Pitfalls observed
 
 1. **Actions have no TTY.** fzf, `read` and `select` must run in a plugin pane (popup/overlay/split). Every picker plugin works around this.
 2. **Relative paths in pane commands break with `--cwd`.** Action cwd is the plugin root, but a pane opened with `--cwd X` starts in X. Use `["bash","-c","exec bash \"$HERDR_PLUGIN_ROOT/…\""]` (lazygit, catchup, command-palette, plugin-manager). This probably explains floax's "`--cwd` makes the pane exit" and calebcauthon avoiding `--cwd`.
@@ -883,7 +608,7 @@ in-app reload (`prefix+shift+r`), not `herdr server reload-config` (`official-do
 9. **Errors disappear.** Action output only reaches `herdr plugin log list`. Always toast failures, and in panes wait for Enter (drovr, command-palette, catchup, examples).
 10. **`plugin action invoke` is fire-and-forget.** Exit 0 means dispatched, not succeeded. Poll `plugin log list` for the `log_id` if you need the result (command-palette).
 11. **`agent start` requires the pane to be at an idle shell prompt.** Wait with `pane process-info` (forkr) or retry on `agent_pane_busy` (fork-from-message). It needs a **unique agent name**, so clear it afterwards with `agent rename --clear`. `agent_not_ready` after a trust or hook dialog is not fatal.
-12. **No session id without the integration.** `agent_session` only exists if `herdr integration install claude` was run and Claude was restarted after that. Say so in the error.
+12. **Forks need a session id from the matching integration.** Use `herdr integration install claude` or `herdr integration install codex`, then start or resume the session in its pane. Say so in the error; never install automatically.
 13. **Focus can change between keypress and execution.** Re-validate that the pane still has the expected tab or workspace before mutating (drovr, fork-from-message).
 14. **Moving the last pane of a tab closes that tab** (drovr).
 15. **`min_herdr_version` too high is a hard load failure.** Gate newer features at runtime instead (qu8n).
@@ -891,6 +616,6 @@ in-app reload (`prefix+shift+r`), not `herdr server reload-config` (`official-do
 17. **Plugin ids with dots make qualified ids ambiguous to split** (`jt.command-palette.open`). Use a dot-free id like `my-herdr`, or always get the plugin id from API fields, not by splitting.
 18. **Don't store state in `HERDR_PLUGIN_ROOT`**, because install replaces the checkout. Use `HERDR_PLUGIN_STATE_DIR` and `HERDR_PLUGIN_CONFIG_DIR`. Scripts run outside herdr (shell hooks) don't get these vars (qu8n).
 19. **Pass per-invocation data via `--env`, not shared temp files**, which race across simultaneous invocations and sessions (catchup, calebcauthon).
-20. **Forward `CLAUDE_CONFIG_DIR`** to the new tab if you use multiple Claude config dirs, or the fork may resume against the wrong account and store (fork-from-message).
+20. **Forward the agent's config override** to the new tab: `CLAUDE_CONFIG_DIR` for Claude, `CODEX_HOME` for Codex, or a fork may use the wrong account and store (fork-from-message).
 21. **A failed mutation may already have been applied** (for example after a timeout), so don't auto-retry blindly (lazygit DESIGN.md).
 22. **`[[build]]` does not run on `plugin link`**, and build commands get no runtime env. Not relevant for a no-build Bash plugin, but don't rely on build for setup.

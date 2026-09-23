@@ -1,4 +1,4 @@
-"""Fork this pane's Claude Code session into a new tab.
+"""Fork this pane's Claude Code or Codex session into a new tab.
 
 For the moment you want to try something without losing where you are: the new
 tab starts from the same conversation, and the session you forked from carries
@@ -6,7 +6,7 @@ on untouched.
 
 Bound to a key, the source is the focused pane and no name is set, so the tab
 keeps herdr's generic name and whatever renames your tabs — a tab-renaming
-plugin, or Claude's own title — stays in charge of it.
+plugin, or the agent's own title — stays in charge of it.
 
 The `fork-prompt` popup runs this same action after asking for a name. It
 passes the name, and the pane it asked about, through a request in the state
@@ -17,6 +17,19 @@ from ..context import Context
 
 
 def main(args):
+    """Fork the requested source pane or the currently focused pane.
+
+    Args:
+        args (list[str]): Dispatcher arguments; unused because herdr actions
+            take no runtime parameters. Named forks use the request file.
+
+    Returns:
+        int: 0 after the new tab and pane have been reported to the plugin log.
+
+    Raises:
+        MyHerdrError: No source pane is available, validation fails, or the fork
+            cannot start. The dispatcher logs and notifies the user.
+    """
     ctx = Context()
     request = fork_request.take(ctx.state_dir)
     if request:

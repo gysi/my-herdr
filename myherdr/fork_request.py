@@ -37,6 +37,16 @@ def save(state_dir, pane_id, name=None, now=None):
 
     Written to a temporary name and renamed into place, so the action never
     reads a half-written file.
+
+    Args:
+        state_dir (str): Existing plugin state directory for the request file.
+        pane_id (str): Source pane to re-read and fork when the action runs.
+        name (str or None): Requested tab label; None requests default naming.
+        now (float or None): Write timestamp in Unix seconds. None uses
+            time.time(); tests can provide a deterministic clock value.
+
+    Raises:
+        MyHerdrError: The state directory is missing or the file cannot be saved.
     """
     if not state_dir:
         raise MyHerdrError("no plugin state directory to hand the tab name over in")
@@ -59,6 +69,17 @@ def take(state_dir, now=None):
     None as well for a request that is stale, unreadable or malformed: the
     caller then forks the focused pane unnamed, which is what `fork-tab` does
     when nobody asked for a name.
+
+    Args:
+        state_dir (str or None): Directory holding the request; None or an empty
+            string means there is no request to claim.
+        now (float or None): Current Unix time for expiry checks. None uses
+            time.time(); requests older than REQUEST_TTL are discarded.
+
+    Returns:
+        dict or None: ``pane_id`` (str) and ``name`` (str or None) from a valid
+            request, or None if unavailable or invalid. The claimed file is
+            removed even when its contents cannot be used.
     """
     if not state_dir:
         return None
@@ -93,12 +114,22 @@ def take(state_dir, now=None):
 
 
 def drop(state_dir):
-    """Withdraw a request nobody is going to take."""
+    """Withdraw a pending request, ignoring filesystem errors.
+
+    Args:
+        state_dir (str or None): Plugin state directory. None or an empty
+            string leaves the filesystem untouched.
+    """
     if state_dir:
         _remove(os.path.join(state_dir, FILE_NAME))
 
 
 def _remove(path):
+    """Remove a temporary or pending file, ignoring filesystem errors.
+
+    Args:
+        path (str): File path to unlink, which may already be absent.
+    """
     try:
         os.remove(path)
     except OSError:

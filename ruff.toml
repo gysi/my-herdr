@@ -1,0 +1,18 @@
+target-version = "py39"
+# These Python entrypoints have no .py extension.
+extend-include = ["bin/my-herdr", "tests/mocks/herdr"]
+
+[lint]
+select = [
+    "E4", "E7", "E9", "F",  # Basic errors and unused names.
+    "D102", "D103", "D107",  # Public methods, functions, and constructors need docs.
+    "D417",                 # Parameters must appear in an existing Args section.
+]
+
+[lint.pydocstyle]
+convention = "google"
+ignore-var-parameters = false
+
+[lint.per-file-ignores]
+# unittest method names describe each check; helper Args sections still get D417.
+"tests/test_*.py" = ["D102"]

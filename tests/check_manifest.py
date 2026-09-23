@@ -34,10 +34,24 @@ MODULE_DIRS = {"actions": "actions", "panes": "panes"}
 
 
 def check(manifest, root=ROOT):
-    """Return a list of problems; empty means the manifest is good."""
+    """Validate a parsed manifest and its entrypoint files without live herdr.
+
+    Args:
+        manifest (dict): Parsed TOML manifest, including any deliberately invalid
+            field values used in tests.
+        root (str): Plugin root for checking module paths; defaults to this checkout.
+
+    Returns:
+        list[str]: Validation problems; an empty list means the manifest passed.
+    """
     problems = []
 
     def bad(message):
+        """Append one diagnostic to the enclosing validation result.
+
+        Args:
+            message (str): Problem description to report to the developer.
+        """
         problems.append(message)
 
     for key in REQUIRED:
@@ -79,6 +93,16 @@ def check(manifest, root=ROOT):
 
 
 def check_section(section, entries, root):
+    """Validate IDs, commands, and section-specific properties.
+
+    Args:
+        section (str): Manifest table-array name, such as "actions" or "panes".
+        entries (list[dict]): Parsed entries belonging to that section.
+        root (str): Plugin directory for module existence checks.
+
+    Returns:
+        list[str]: Diagnostics for invalid or duplicate entries.
+    """
     problems = []
     seen = set()
     for index, entry in enumerate(entries):
@@ -108,6 +132,15 @@ def check_section(section, entries, root):
 
 
 def check_command(where, command):
+    """Check that a manifest command is a nonempty string argv list.
+
+    Args:
+        where (str): Entry location to include in diagnostics, such as "actions[0]".
+        command (object): Command value, which may be absent or malformed.
+
+    Returns:
+        list[str]: Command diagnostics, or an empty list for a valid argv array.
+    """
     # herdr runs these without a shell, so an empty element would become an
     # empty argv entry rather than disappearing.
     if not isinstance(command, list) or not command:
@@ -118,6 +151,15 @@ def check_command(where, command):
 
 
 def check_pane(where, entry):
+    """Validate a pane's placement and popup-only dimensions.
+
+    Args:
+        where (str): Manifest entry location for diagnostics.
+        entry (dict): Pane declaration; missing placement defaults to overlay.
+
+    Returns:
+        list[str]: Placement and dimension diagnostics, possibly empty.
+    """
     problems = []
     placement = entry.get("placement", "overlay")
     if placement not in PLACEMENTS:
@@ -130,7 +172,17 @@ def check_pane(where, entry):
 
 
 def check_module(section, entry_id, entry, root):
-    """Every action and pane id must have a module the dispatcher can import."""
+    """Check that an action or pane declaration routes to an existing module.
+
+    Args:
+        section (str): Manifest section; only actions and panes have modules.
+        entry_id (str): Validated local ID, with dashes mapped to module underscores.
+        entry (dict): Declaration whose command must mention its own ID.
+        root (str): Plugin checkout directory to inspect.
+
+    Returns:
+        list[str]: Routing diagnostics; empty for valid or non-module sections.
+    """
     directory = MODULE_DIRS.get(section)
     if directory is None:
         return []
@@ -150,6 +202,14 @@ def check_module(section, entry_id, entry, root):
 
 
 def check_link_handlers(manifest):
+    """Check that link handlers have patterns and refer to declared actions.
+
+    Args:
+        manifest (dict): Parsed manifest with action and link-handler arrays.
+
+    Returns:
+        list[str]: Missing-pattern or unknown-action diagnostics.
+    """
     actions = {a.get("id") for a in manifest.get("actions", []) if isinstance(a, dict)}
     problems = []
     for index, handler in enumerate(manifest.get("link_handlers", [])):
@@ -163,6 +223,15 @@ def check_link_handlers(manifest):
 
 
 def main(argv):
+    """Read a manifest and print offline validation results.
+
+    Args:
+        argv (list[str]): Optional manifest path; empty uses this checkout's manifest.
+
+    Returns:
+        int: 0 for a valid manifest or an explicit skip without tomllib;
+            1 for unreadable, malformed, or invalid manifests.
+    """
     if tomllib is None:
         print("check_manifest: needs Python 3.11+ for tomllib, skipping")
         return 0

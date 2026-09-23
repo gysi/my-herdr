@@ -12,6 +12,14 @@ HAS_TOMLLIB = check_manifest.tomllib is not None
 
 
 def manifest(**overrides):
+    """Build a minimal valid manifest for validation tests.
+
+    Args:
+        **overrides: Top-level manifest fields to replace, including invalid values.
+
+    Returns:
+        A fresh manifest dictionary containing the requested overrides.
+    """
     base = {
         "id": "my-herdr",
         "name": "my-herdr",
@@ -120,6 +128,14 @@ class PaneTest(unittest.TestCase):
             open(os.path.join(directory, "ping.py"), "w").close()
 
     def check(self, entry_overrides):
+        """Validate a pane entry against the temporary plugin directory.
+
+        Args:
+            entry_overrides: Dictionary of fields to replace in a valid pane entry.
+
+        Returns:
+            List of validation messages; empty when the manifest is valid.
+        """
         entry = {"id": "ping", "title": "t", "command": ["python3", "bin/my-herdr", "pane", "ping"]}
         entry.update(entry_overrides)
         return check_manifest.check(manifest(panes=[entry]), root=self.root)

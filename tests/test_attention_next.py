@@ -15,6 +15,18 @@ from myherdr.errors import MyHerdrError
 
 
 def agent(pane_id, status="idle", seq=0, tab=None, **extra):
+    """Build an agent entry for attention-selection tests.
+
+    Args:
+        pane_id: String pane identifier; its prefix supplies the workspace ID.
+        status: Agent status string; defaults to idle.
+        seq: State-change sequence number; defaults to zero, the oldest priority.
+        tab: String tab ID; None or an empty string selects the workspace's first tab.
+        **extra: Agent fields to add or override, including deliberately invalid values.
+
+    Returns:
+        Dictionary shaped like an entry in an agent-list response.
+    """
     workspace = pane_id.split(":")[0]
     item = {
         "pane_id": pane_id,
@@ -29,6 +41,14 @@ def agent(pane_id, status="idle", seq=0, tab=None, **extra):
 
 
 def listing(*agents):
+    """Wrap agent entries in an agent-list result.
+
+    Args:
+        *agents: Agent dictionaries or malformed entries for robustness tests.
+
+    Returns:
+        Dictionary with agents and type fields, without a CLI response envelope.
+    """
     return {"agents": list(agents), "type": "agent_list"}
 
 
@@ -36,6 +56,14 @@ class RingTest(unittest.TestCase):
     """The walk order: position only, never status."""
 
     def ids(self, result):
+        """Extract pane IDs in the action's traversal order.
+
+        Args:
+            result: Agent-list result dictionary, or malformed input under test.
+
+        Returns:
+            List of pane ID strings in ring order.
+        """
         return [a["pane_id"] for a in attention_next.ring(result)]
 
     def test_workspace_then_tab_then_pane(self):
@@ -76,6 +104,15 @@ class RingTest(unittest.TestCase):
 
 class UrgencyTest(unittest.TestCase):
     def urgent(self, result, here=None):
+        """Find the pane with the highest attention priority.
+
+        Args:
+            result: Agent-list result dictionary to order and inspect.
+            here: Current pane ID to exclude; None excludes no pane.
+
+        Returns:
+            Selected pane ID string, or None when no agent needs attention.
+        """
         found = attention_next.most_urgent(attention_next.ring(result), here)
         return found["pane_id"] if found else None
 
@@ -116,6 +153,16 @@ class WalkTest(unittest.TestCase):
             listing(agent("w1:p1"), agent("w1:p2"), agent("w1:p3")))
 
     def choose(self, here, cursor, agents=None):
+        """Select a pane using the current position and saved traversal state.
+
+        Args:
+            here: Current pane ID string.
+            cursor: Saved cursor dictionary; an empty dictionary starts a new walk.
+            agents: Ordered agent list; None or an empty list uses the default fixture.
+
+        Returns:
+            Selected pane ID string.
+        """
         return attention_next.choose(agents or self.agents, here, cursor)["pane_id"]
 
     def test_the_first_press_starts_at_the_top_of_the_ring(self):
@@ -236,6 +283,19 @@ class ActionTest(unittest.TestCase):
         self.env = {"HERDR_PANE_ID": "w1:p9", "HERDR_PLUGIN_STATE_DIR": self.tmp}
 
     def run_action(self, *answers, **kwargs):
+        """Run attention-next with mocked CLI responses and record its exit code.
+
+        Args:
+            *answers: Completed subprocess results to replay in call order.
+            **kwargs: Optional env dictionary overriding the isolated action environment;
+                values of None remove variables. Other keys are ignored.
+
+        Returns:
+            Recorder containing the CLI calls; self.exit_code holds the action's result.
+
+        Raises:
+            MyHerdrError: The action encounters an unrecoverable CLI failure.
+        """
         recorder = support.Recorder(*answers)
         env = dict(self.env)
         for key, value in kwargs.pop("env", {}).items():
@@ -251,6 +311,17 @@ class ActionTest(unittest.TestCase):
         return recorder
 
     def focused(self, recorder):
+        """Assert that the final CLI command focuses an agent and extract its pane.
+
+        Args:
+            recorder: Recorder containing calls from an action invocation.
+
+        Returns:
+            Focused pane ID string.
+
+        Raises:
+            AssertionError: The final command is not an agent-focus command.
+        """
         self.assertTrue(recorder.commands[-1].startswith("agent focus "))
         return recorder.commands[-1].split()[-1]
 

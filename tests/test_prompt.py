@@ -8,11 +8,19 @@ from myherdr import prompt
 
 
 def type_keys(data):
-    """Run read_line over `data` as if typed. Returns (result, echoed text)."""
+    """Run the line editor with simulated keyboard input.
+
+    Args:
+        data: Bytes to read as keystrokes, including any terminal escape sequences.
+
+    Returns:
+        Tuple of the accepted string (or None on cancellation) and echoed text.
+    """
     stream = io.BytesIO(data)
     echoed = []
 
     def pending():
+        """Return whether unread bytes remain in the simulated terminal."""
         # Mirrors a real terminal: the rest of an escape sequence arrives in
         # the same write, a lone Esc is followed by nothing.
         return stream.tell() < len(data)

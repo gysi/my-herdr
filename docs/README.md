@@ -4,16 +4,41 @@ Start with [AGENTS.md](../AGENTS.md) and the plan relevant to the requested task
 [project README](../README.md) and code describe current behavior. Active plans describe intended
 work; completed plans preserve the reasoning behind past development.
 
+## Local checks
+
+Plugin users need only Python 3.9+ and herdr. Development checks use Python 3.11+ (for the
+standard-library TOML parser), Make, and [mise](https://mise.jdx.dev/installing-mise.html).
+Mise manages the Ruff version pinned in `mise.toml`; it does not manage the plugin's Python.
+
+After reviewing the checkout's `mise.toml`, run:
+
+```bash
+mise trust
+mise install
+make check
+```
+
+`make check` runs Ruff, syntax checks, manifest validation, and tests. `make lint` runs only
+Ruff. Both use `mise exec`, so shell activation is optional. To use an already installed Ruff,
+run `make check RUFF=/path/to/ruff` with the version specified in `mise.toml`.
+
+The lint rules catch basic Python errors, missing public function/method docstrings, and missing
+parameter entries in existing Google-style `Args:` sections, including `*args` and `**kwargs`.
+Descriptive unittest methods do not need docstrings. Review still checks missing `Args:` sections,
+private helpers, return values, errors, and the accuracy of the descriptions. Ruff does not format
+or rewrite files during checks. See [Ruff's D417 rule](https://docs.astral.sh/ruff/rules/undocumented-param/)
+for its parameter-checking limits.
+
 ## Active plans
 
-| Slug | Plan | Status |
-|---|---|---|
-| `CFORK` | [Codex support for fork actions](plans/2026-09-23-CFORK-codex-fork-support.md) | Planned |
+None.
 
 ## Completed plans
 
+- `CFORK`: [Codex support for fork actions](plans/2026-09-23-CFORK-codex-fork-support.md).
+  Automated checks passed; the user confirmed successful live smoke testing.
 - [Initial development](plans/initial-development.md): the plugin's initial design, implementation
-  phases, and verification record.
+  phases, verification record, and [original recommendations](plans/initial-development.md#original-recommendations).
 
 ## Research
 
@@ -21,6 +46,10 @@ work; completed plans preserve the reasoning behind past development.
   locally verified CLI behavior. If the live CLI disagrees, trust it and update the research.
 - [Community plugins](research/community-plugins.md): examples, patterns, and pitfalls; not the
   specification for this plugin.
+
+Both research notes identify their original snapshot date. Targeted corrections do not move that
+date; only a full re-survey or contract review does. Historical recommendations stay in the
+completed initial development plan; current plugin behavior belongs in the README and code.
 
 ## Plan conventions
 
@@ -91,4 +120,4 @@ concrete.
 - `attention-status`: sidebar/status line token or a `notification show` summary of how many agents
   are blocked vs finished-unread.
 - `setup-keys` action that idempotently adds chosen keybindings (marker-guarded), opt-in only.
-- Forking agents beyond Claude Code and the planned Codex support.
+- Forking agents beyond Claude Code and Codex.

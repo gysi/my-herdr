@@ -32,6 +32,19 @@ EXIT_INTERRUPTED = 130
 
 
 def main(argv):
+    """Route command-line input to an action or pane entrypoint.
+
+    Args:
+        argv (list[str]): Arguments after the executable: an action ID, or
+            "pane" followed by an entrypoint ID, plus any entrypoint arguments.
+
+    Returns:
+        int: Process exit status: 0 for success/help, 1 for an action error,
+            2 for invalid usage, or 130 for an interrupted headless action.
+
+    Raises:
+        ImportError: A routed module has a broken internal import.
+    """
     if not argv or argv[0] in ("-h", "--help", "help"):
         print(USAGE)
         print()
@@ -48,6 +61,21 @@ def main(argv):
 
 
 def dispatch(kind, name, args, interactive):
+    """Import an entrypoint, run it, and report expected failures.
+
+    Args:
+        kind (str): Package containing the entrypoint: "actions" or "panes".
+        name (str): Manifest ID; dashes are translated to module underscores.
+        args (list[str]): Remaining command-line arguments for the entrypoint.
+        interactive (bool): True to keep popup errors readable until Enter;
+            False to toast failures from headless actions.
+
+    Returns:
+        int: Entrypoint exit status or the dispatcher's failure/cancellation code.
+
+    Raises:
+        ImportError: The module exists but one of its internal imports fails.
+    """
     if not ID_RE.match(name):
         return usage_error("invalid %s id: %r" % (kind[:-1], name))
 
@@ -73,6 +101,15 @@ def dispatch(kind, name, args, interactive):
 
 
 def report(exc, interactive):
+    """Log an error, then toast it or wait for Enter in a popup.
+
+    Args:
+        exc (MyHerdrError): Failure whose message is shown to the user.
+        interactive (bool): True to wait for Enter; False to send a notification.
+
+    Returns:
+        int: EXIT_ERROR (1).
+    """
     prefix = Context().plugin_id
     sys.stderr.write("%s: %s\n" % (prefix, exc))
     if interactive:
@@ -91,12 +128,28 @@ def report(exc, interactive):
 
 
 def usage_error(message):
+    """Print a usage diagnostic and the command synopsis to stderr.
+
+    Args:
+        message (str): Explanation of the invalid command-line input.
+
+    Returns:
+        int: EXIT_USAGE (2).
+    """
     sys.stderr.write("my-herdr: %s\n%s\n" % (message, USAGE))
     return EXIT_USAGE
 
 
 def available(kind):
-    """Module names under myherdr/<kind>/, as manifest ids (underscores back to dashes)."""
+    """List entrypoint modules as manifest IDs.
+
+    Args:
+        kind (str): Package directory to inspect, normally "actions" or "panes".
+
+    Returns:
+        list[str]: Sorted IDs with underscores replaced by dashes, excluding
+            private modules; empty if the directory cannot be read.
+    """
     directory = os.path.join(os.path.dirname(os.path.abspath(__file__)), kind)
     try:
         names = os.listdir(directory)

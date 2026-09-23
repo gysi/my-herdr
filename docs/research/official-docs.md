@@ -1,9 +1,10 @@
 # herdr plugin authoring: reference notes from the official docs
 
-> **Reference snapshot, not a maintained document.** It was written while building this plugin
-> against **herdr 0.9.1** and is not updated in step with herdr releases. It exists so that work on
-> this plugin does not have to re-derive the plugin contract. **herdr's own documentation and the
-> live `herdr` CLI always win**; when they disagree with this file, fix the file.
+> **Reference snapshot — recorded 2026-09-21, targeting herdr 0.9.1.** This is not updated in
+> step with herdr releases. The date identifies the original snapshot, not the last edit.
+> Targeted corrections are welcome and do not change it; update it only after a full review of
+> the contract. **herdr's own documentation and the live `herdr` CLI always win**; when they
+> disagree with this file, fix the file.
 
 The herdr plugin contract as `my-herdr` relies on it. Everything here describes **herdr 0.9.1**
 (protocol 22), the current stable release and the version this plugin targets.
@@ -525,7 +526,7 @@ Built from the documented pieces and verified live on 0.9.1.
    Ctrl-D cancel with exit 0. On error it prints the message and waits for Enter, since the popup
    closes the moment its process exits.
 3. **The popup does not do the slow work.** It stays on screen until its process exits, and a fork
-   waits for Claude to come up, so doing it in place would cover the new tab for that whole time.
+   waits for the agent to come up, so doing it in place would cover the new tab for that whole time.
    Starting the work as a detached process would hide it from herdr: no plugin log, no action
    environment.
 4. Instead the popup writes its input to a file in `$HERDR_PLUGIN_STATE_DIR` and runs
@@ -763,6 +764,30 @@ herdr agent start <name> --kind KIND --pane ID [--timeout MS] [-- <agent-args...
 
 `agent_session` ([socket API page][socket-api]): `pane.get`, `pane.list`, `agent.get` and `agent.list` include a read-only `agent_session` object when herdr has stored a native session reference for the agent, and omit the field otherwise.
 
+**Codex forks [local CLI help, official Codex docs].** herdr 0.9.1 accepts `codex` for
+`agent start --kind` and `integration install`. Codex panes can report
+`agent_session = {agent: "codex", kind: "id", source: "herdr:codex", value: "<session-id>"}`.
+Install `herdr integration install codex`, then start or resume Codex in the pane so herdr can
+learn its session ID. Both fork actions require a nonempty string ID and reject a session's
+explicit agent field when it conflicts with the pane's agent.
+
+The installed `codex fork --help` accepts a session UUID and an optional prompt, with no
+session-name flag. The [official Codex CLI reference](https://learn.chatgpt.com/docs/developer-commands?surface=cli#codex-fork)
+describes a fork as a new chat preserving the original transcript. `my-herdr` launches:
+
+```text
+herdr agent start <temporary-name> --kind codex --pane <new-pane> --timeout 60000 -- fork <session-id>
+```
+
+The name from the popup labels only the herdr tab for Codex; neither a name nor an initial prompt
+is passed to Codex. Codex loads and validates its saved conversation itself. The plugin performs
+no Codex transcript search or storage precheck, so a missing conversation can remain visible in
+the new tab until startup times out and cleanup closes it. `fork_agents.py` holds agent-specific
+validation, arguments, and environment selection; `fork.py` shares tab creation, focus, shell
+readiness, startup, temporary-name clearing, and cleanup across both agents. The plugin forwards
+`CODEX_HOME` for Codex and `CLAUDE_CONFIG_DIR` for Claude from the action environment, inherited
+from the herdr server; overrides set only in the source shell are not discovered.
+
 For Claude this requires `herdr integration install claude`. Per the [integrations page][integrations], the installed hook reports the Claude Code session identity to the local herdr socket when a session starts, while Claude Code's state comes from herdr's screen-manifest detection.
 
 **The hook is versioned independently of herdr [local].** herdr 0.9.1 installs **v10**, whose Claude-settings registration matches the `SessionStart` sources `^(startup|resume|clear|compact|fork)$`. `fork` is in that list, so a forked session reports its **new** id when it starts.
@@ -955,7 +980,7 @@ herdr pane get <pane_id>
 - **Optional:** `agent`, `agent_session`, `cwd`, `foreground_cwd`, `label`, `title`, `display_agent`, `state_labels`, `tokens`, `scroll`, `terminal_title`, `terminal_title_stripped`.
 - **AgentInfo** adds `name`, `interactive_ready`, `launch_pending`, `screen_detection_skipped`, `state_change_seq`.
 
-Pane `cwd` vs `foreground_cwd`: `foreground_cwd` is present when herdr can resolve the cwd of the foreground process that controls the pane; `cwd` stays the pane/workspace cwd that labels and follow-cwd behaviour use. For forking Claude, prefer `foreground_cwd // cwd` as `--cwd` of the new tab: Claude sessions are keyed by project directory.
+Pane `cwd` vs `foreground_cwd`: `foreground_cwd` is present when herdr can resolve the cwd of the foreground process that controls the pane; `cwd` stays the pane/workspace cwd that labels and follow-cwd behaviour use. Both fork actions prefer `foreground_cwd // cwd` as `--cwd` of the new tab. This also preserves Claude's project-directory session lookup.
 
 ### 9.7 `agent list`
 
@@ -1048,7 +1073,7 @@ Request and response shapes:
 13. **`pane run` types a shell command line.** It joins argv with spaces, so quote with `printf %q`. It does not wait for the shell to be ready; `agent start` does.
 14. **`pane move` can silently no-op** (`changed:false`, `reason:"zoomed_tab"` or `"same_tab"`). Check `.result.move_result.changed`.
 15. **After a cross-workspace move the pane id changes.** A new-tab move within the same workspace keeps the workspace prefix; still, always use `.result.move_result.pane.pane_id`.
-16. **`agent_session` is only present after `herdr integration install claude`** has installed the SessionStart hook, and only once Claude has started or resumed inside that pane. It is omitted otherwise. Make fork-tab fail gracefully with a `notification show`.
+16. **Forks need a session ID from the matching integration.** Install `herdr integration install claude` or `herdr integration install codex`, then start or resume the agent in its pane. Missing IDs must make fork-tab fail gracefully with a `notification show`; see §7.4 for Claude hook details.
 17. **`pane current` returns `type: "pane_current"`**, not `pane_info` as the generic docs example suggests.
 18. **CLI errors go to stderr as JSON with exit code 1.** Usage errors exit 2. `set -e` scripts should capture stderr for the user-facing message.
 19. **Relinking.** Scripts are read fresh on every run, and the registry is reloaded on every invoke, but a manifest change (for example a new action) needs `herdr plugin link <dir>` again before herdr sees it (§4).
@@ -1056,8 +1081,7 @@ Request and response shapes:
 21. **`agent_status = "done"` only exists while nobody has looked.** It is durable (measured: >24 minutes) for an unseen agent, but an agent that finishes in a pane you are watching goes straight to `idle` and never passes through `done`. There is no seen field to read instead. See §9.7.
 22. **The claude integration hook needs `HERDR_PANE_ID`.** Without it (a popup has none) the hook exits silently and herdr never learns the session id, even though Claude itself starts fine. See §7.4.
 23. **`pane get` takes its id positionally**, unlike `pane current` and `pane process-info`, which take `--pane ID`. `pane get --pane w1:p1` exits 2. See §9.6.
-24. **`agent_session.value` can be stale or resume a discarded branch.** A resume can move the
+24. **Claude's `agent_session.value` can be stale or resume a discarded branch.** A resume can move the
     conversation to a new id, background sessions are never tied to a pane, and a rewind leaves a
     branch that `--resume` may pick. See §7.4.
 25. **llms-full.txt inconsistency.** `https://herdr.dev/llms-full.txt` has an older landing-page blurb ("tag your repo to be listed when the marketplace launches"). The versioned `marketplace.mdx` says the marketplace is live at herdr.dev/plugins.
-

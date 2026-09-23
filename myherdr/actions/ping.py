@@ -16,6 +16,14 @@ from ..context import Context
 
 
 def main(args):
+    """Print invocation diagnostics and a best-effort pane lookup to the log.
+
+    Args:
+        args (list[str]): Dispatcher arguments, printed for diagnostic purposes.
+
+    Returns:
+        int: 0, even when the read-only herdr lookup fails.
+    """
     ctx = Context()
     out = sys.stdout
 

@@ -129,6 +129,15 @@ class NotifyTest(unittest.TestCase):
     def test_a_failing_toast_never_raises(self):
         # notify() reports other failures; it must not become one itself.
         def explode(*args, **kwargs):
+            """Simulate a failure while delivering a notification.
+
+            Args:
+                *args: CLI arguments accepted for compatibility and ignored.
+                **kwargs: Wrapper options accepted for compatibility and ignored.
+
+            Raises:
+                MyHerdrError: Always, simulating an unavailable herdr executable.
+            """
             raise MyHerdrError("herdr CLI not found")
 
         with mock.patch.object(herdr, "run", explode):
@@ -162,6 +171,15 @@ class FocusedPaneTest(unittest.TestCase):
 
 
 def process_info(foreground, shell_pid=100):
+    """Build a successful process-info response for shell readiness tests.
+
+    Args:
+        foreground: List of foreground process dictionaries with pid and name fields.
+        shell_pid: Integer PID identifying the pane's shell; defaults to 100.
+
+    Returns:
+        Completed subprocess result with a JSON process_info envelope on stdout.
+    """
     return support.ok({"process_info": {
         "foreground_processes": foreground, "shell_pid": shell_pid}})
 

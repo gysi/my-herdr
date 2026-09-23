@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-23
+
+### Added
+
+- Codex support in `fork-tab` and `fork-tab-ask`, detected automatically alongside Claude Code.
+  Codex forks open in the source workspace and directory, with immediate focus and the same
+  failure cleanup. `CODEX_HOME` is forwarded when set in the action environment. A requested
+  name labels the herdr tab only; Codex validates its saved conversation during startup.
+
+### Changed
+
+- Both fork actions reject unusable session references and conflicting agent metadata before
+  opening a tab or popup, with agent-specific integration guidance for missing session IDs.
+- Fork action titles and the naming popup use wording that applies to either agent.
+
 ## [0.3.0] - 2026-09-21
 
 ### Added
@@ -56,7 +71,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Test harness: `unittest` suite with a fake `herdr` CLI and manifest
   validation, all run locally by `make check`.
 
-[Unreleased]: https://github.com/gysi/my-herdr/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/gysi/my-herdr/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/gysi/my-herdr/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/gysi/my-herdr/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/gysi/my-herdr/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/gysi/my-herdr/releases/tag/v0.1.0

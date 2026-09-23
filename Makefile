@@ -1,10 +1,15 @@
-# Local checks only; there is no CI. Standard library only, so no setup step.
+# Local checks only; mise provides Ruff, and the plugin uses the standard library.
 PYTHON ?= python3
+RUFF ?= mise exec -- ruff
 
-.PHONY: check test syntax manifest link logs
+.PHONY: check lint test syntax manifest link logs
 
 ## everything that must pass before a commit
-check: syntax manifest test
+check: lint syntax manifest test
+
+## basic Python errors, missing public docstrings, and documented parameters
+lint:
+	$(RUFF) check .
 
 ## unit + end-to-end tests (end-to-end run bin/my-herdr against tests/mocks/herdr)
 test:

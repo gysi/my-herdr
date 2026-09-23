@@ -1,4 +1,4 @@
-"""Fork the Claude Code session of a pane into a new tab.
+"""Fork the Claude Code or Codex session of a pane into a new tab.
 
 The fork starts with the full conversation of the original and is otherwise
 independent: the source session keeps running and is not touched.
@@ -8,24 +8,23 @@ one piece of code however it is reached: bound to a key directly, or through
 the popup that asks for a tab name first.
 
 Why `agent start` rather than typing a command into the new pane: it waits for
-the shell to be ready and for Claude to actually come up, and it fails loudly
+the shell to be ready and for the agent to actually come up, and it fails loudly
 instead of leaving a half-typed command line behind. It costs a throwaway agent
 name, which is cleared again once the agent is up.
 
 The new tab is focused as soon as it exists, not once the fork is up. Waiting
-would leave you staring at the old pane for as long as Claude takes to replay
+would leave you staring at the old pane for as long as the agent takes to replay
 the session, unable to do anything useful in it, which reads as lag; watching
 the fork boot reads as progress. Focus is not gated on readiness — herdr
 focuses an ordinary new tab before its shell has started too. The cost is that
 a fork that fails has to put focus back, which `abandon()` does.
 """
-import glob
 import os
 
-from . import herdr
+from . import fork_agents, herdr
 from .errors import MyHerdrError
 
-#: `agent start` waits for Claude to be ready for input. The CLI default is
+#: `agent start` waits for the agent to be ready for input. The CLI default is
 #: 30000 ms, which a cold start with a large session to replay can exceed.
 START_TIMEOUT_MS = 60000
 
@@ -36,29 +35,36 @@ START_TIMEOUT = START_TIMEOUT_MS / 1000.0 + 15.0
 #: A new tab's shell needs a moment before `agent start` will accept the pane.
 SHELL_TIMEOUT = 10.0
 
-#: Not inherited by the new tab's shell, because herdr's server environment is
-#: what plugin commands and new panes get, not the shell the source agent was
-#: started from. Forwarded explicitly so a fork of a session in an alternate
-#: Claude config lands in the same config.
-FORWARDED_ENV = ("CLAUDE_CONFIG_DIR",)
-
 
 def fork_into_new_tab(pane_id, name=None, env=None):
-    """Fork the Claude session running in `pane_id` into a new tab.
+    """Fork a pane's Claude Code or Codex session into a new, focused tab.
 
-    `name` labels the tab and names the forked session; without one the tab
-    keeps herdr's generic name, so tab-renaming plugins and Claude's own title
-    can take it over.
+    Args:
+        pane_id (str): Source herdr pane ID, such as ``w1:p1``. Its current
+            agent supplies the session ID, workspace, and working directory.
+        name (str or None): Optional tab label, also used as the saved session
+            name for Claude. None or an empty string keeps default naming.
+        env (Mapping[str, str] or None): Environment used to resolve Claude's
+            store and select configuration variables to forward to the tab.
+            None uses os.environ; an empty mapping supplies no overrides.
+            This does not replace the environment of herdr subprocesses.
 
-    Returns the new tab and pane ids. Raises MyHerdrError for anything that
-    stops the fork, having closed the new tab again if it got that far.
+    Returns:
+        dict: ``tab_id`` (str or None) and ``pane_id`` (str) for the new tab
+            and pane. The tab ID is None if herdr did not report one.
+
+    Raises:
+        MyHerdrError: Source validation, tab creation, shell readiness, or
+            agent startup failed. After creation, cleanup attempts to close
+            the new tab and restore source focus before propagating errors.
     """
-    agent = claude_agent(pane_id, env)
+    agent = fork_agents.forkable_agent(pane_id, env)
+    kind = agent["agent"]
     session_id = agent["agent_session"]["value"]
     cwd = agent.get("foreground_cwd") or agent.get("cwd")
     workspace_id = agent.get("workspace_id") or pane_id.split(":")[0]
 
-    created = herdr.run_json(*tab_create_args(workspace_id, cwd, name, env))
+    created = herdr.run_json(*tab_create_args(workspace_id, cwd, name, env, kind=kind))
     tab_id = (created.get("tab") or {}).get("tab_id")
     new_pane = (created.get("root_pane") or {}).get("pane_id")
     if not new_pane:
@@ -70,7 +76,7 @@ def fork_into_new_tab(pane_id, name=None, env=None):
             raise MyHerdrError(
                 "the new tab's shell did not reach a prompt within %gs" % SHELL_TIMEOUT)
         herdr.run_json(
-            *agent_start_args(new_pane, session_id, name), timeout=START_TIMEOUT)
+            *agent_start_args(new_pane, session_id, name, kind=kind), timeout=START_TIMEOUT)
     except BaseException:
         # Including the interrupt: a tab holding a fork that never started is
         # worse than no tab, and nobody asked for an empty shell.
@@ -83,108 +89,56 @@ def fork_into_new_tab(pane_id, name=None, env=None):
     return {"tab_id": tab_id, "pane_id": new_pane}
 
 
-def claude_agent(pane_id, env=None):
-    """The agent running in `pane_id`, once it is established it can be forked.
+def tab_create_args(workspace_id, cwd, name=None, env=None, kind="claude"):
+    """Build arguments to create and focus the fork's tab.
 
-    Raises rather than returning None: every caller needs a session id, and
-    each way of not having a usable one needs its own explanation.
-    """
-    result = herdr.try_json("agent", "get", pane_id)
-    agent = (result or {}).get("agent") or {}
-    kind = agent.get("agent")
-    if not kind:
-        raise MyHerdrError("no agent is running in %s" % pane_id)
-    if kind != "claude":
-        raise MyHerdrError(
-            "fork-tab only works on Claude Code panes; %s runs %s" % (pane_id, kind))
+    Args:
+        workspace_id (str): Source workspace ID in which to create the tab.
+        cwd (str or None): Source agent's working directory. None or an empty
+            string omits --cwd and lets herdr choose its default directory.
+        name (str or None): Optional tab label; None or an empty string omits it.
+        env (Mapping[str, str] or None): Environment from which to select the
+            agent's configuration override. None uses os.environ.
+        kind (str): Agent kind, "claude" (default) or "codex", which selects
+            CLAUDE_CONFIG_DIR or CODEX_HOME for forwarding.
 
-    session = agent.get("agent_session") or {}
-    if session.get("kind") != "id" or not session.get("value"):
-        # herdr learns the id from the Claude hook when Claude starts in the
-        # pane. That never happens for Claude's background-sessions view
-        # (`claude agents`): the session runs in Claude's daemon, detached from
-        # any pane. Otherwise it is a missing integration, or a session that
-        # started before it was installed.
-        raise MyHerdrError(
-            "herdr does not know this Claude session's id, so there is nothing to fork. "
-            "Start the session in this pane with `claude --resume <id>`, not through "
-            "Claude's background-sessions view, and make sure `herdr integration install "
-            "claude` has been run.")
+    Returns:
+        list[str]: herdr arguments, excluding the executable, with --focus.
 
-    saved = conversation_saved(session["value"], env)
-    # One line per fork in the plugin log: which pane, which id herdr holds,
-    # and whether Claude has that conversation. When herdr's id is stale (see
-    # README), this is the line that shows it, without hunting for processes.
-    print("fork: %s runs claude session %s (saved conversation: %s, in %s)" % (
-        pane_id, session["value"], {True: "yes", False: "no", None: "cannot tell"}[saved],
-        os.path.join(claude_config_dir(env), "projects")))
-    if saved is False:
-        # `--resume` would find nothing: Claude exits at once, but `agent
-        # start` only gives up at its timeout, so this saves a minute in a
-        # tab that shows nothing but Claude's error.
-        raise MyHerdrError(
-            "Claude has no saved conversation for this session yet, so there is nothing to "
-            "fork. Send it a message first. If it already has some, restart Claude in this "
-            "pane: herdr may still hold the id it had before a resume.")
-    return agent
-
-
-def conversation_saved(session_id, env=None):
-    """Whether Claude has the conversation `--resume <session_id>` would load.
-
-    True or False from Claude's own store: `<config>/projects/<dir>/<id>.jsonl`.
-    None when there is no store to look in, and the caller must not refuse
-    on a guess. The config directory is the one the fork will use, resolved
-    the same way, so the check cannot rule out a session the fork would find.
-    """
-    projects = os.path.join(claude_config_dir(env), "projects")
-    if not os.path.isdir(projects):
-        return None
-    pattern = os.path.join(glob.escape(projects), "*", glob.escape(session_id) + ".jsonl")
-    return bool(glob.glob(pattern))
-
-
-def claude_config_dir(env=None):
-    """Claude's config directory: CLAUDE_CONFIG_DIR, else ~/.claude."""
-    env = os.environ if env is None else env
-    configured = env.get("CLAUDE_CONFIG_DIR")
-    if configured:
-        return os.path.expanduser(configured)
-    home = env.get("HOME") or os.path.expanduser("~")
-    return os.path.join(home, ".claude")
-
-
-def tab_create_args(workspace_id, cwd, name=None, env=None):
-    """`tab create` for the fork's tab: same workspace, same directory.
-
-    The directory matters beyond convenience: Claude keys its sessions by
-    project directory, so a fork started elsewhere would not find the session.
+    Raises:
+        MyHerdrError: The agent kind is unsupported.
     """
     args = ["tab", "create", "--workspace", workspace_id]
     if cwd:
         args += ["--cwd", cwd]
     if name:
         args += ["--label", name]
-    for key, value in sorted(forwarded_env(env).items()):
+    for key, value in sorted(fork_agents.forwarded_env(kind, env).items()):
         args += ["--env", "%s=%s" % (key, value)]
     args.append("--focus")
     return args
 
 
-def agent_start_args(pane_id, session_id, name=None):
-    """`agent start` for the fork.
+def agent_start_args(pane_id, session_id, name=None, kind="claude"):
+    """Build arguments to start the fork through herdr without shell quoting.
 
-    `--fork-session` makes Claude branch the resumed session instead of
-    continuing it, which is what leaves the original untouched. Everything
-    after `--` goes to Claude as an argv list, so a name with spaces or quotes
-    needs no quoting anywhere.
+    Args:
+        pane_id (str): Destination pane ID; its shell must be ready at launch.
+        session_id (str): Source agent's native session ID to fork.
+        name (str or None): Optional saved-session name for Claude. None or an
+            empty string omits it; Codex ignores it.
+        kind (str): Agent kind, "claude" (default) or "codex".
+
+    Returns:
+        list[str]: herdr arguments, excluding the executable, including a
+            temporary agent name, startup timeout, and agent-specific argv.
+
+    Raises:
+        MyHerdrError: The agent kind is unsupported.
     """
-    args = ["agent", "start", temp_agent_name(), "--kind", "claude",
+    return ["agent", "start", temp_agent_name(), "--kind", kind,
             "--pane", pane_id, "--timeout", str(START_TIMEOUT_MS),
-            "--", "--resume", session_id, "--fork-session"]
-    if name:
-        args += ["-n", name]
-    return args
+            "--"] + fork_agents.fork_args(kind, session_id, name)
 
 
 def temp_agent_name():
@@ -192,14 +146,11 @@ def temp_agent_name():
 
     herdr requires `[a-z][a-z0-9_-]{0,31}` and uniqueness among live agents;
     the pid keeps concurrent invocations apart and stays well inside 32 chars.
+
+    Returns:
+        str: ``mh-fork-<pid>`` for this action process.
     """
     return "mh-fork-%d" % os.getpid()
-
-
-def forwarded_env(env=None):
-    """The variables worth carrying into the fork's shell, if they are set."""
-    env = os.environ if env is None else env
-    return {key: env[key] for key in FORWARDED_ENV if env.get(key)}
 
 
 def abandon(tab_id, source_pane_id):
@@ -209,6 +160,12 @@ def abandon(tab_id, source_pane_id):
     its way out and must not replace it with their own. Closing the focused tab
     leaves herdr to pick the next one, which is rarely where the key was
     pressed, so the source pane is focused explicitly rather than left to luck.
+
+    Args:
+        tab_id (str or None): New tab to close; None or an empty string skips
+            closing when its ID is unavailable.
+        source_pane_id (str or None): Original pane to focus; None or an empty
+            string skips focus restoration.
     """
     if tab_id:
         herdr.try_json("tab", "close", tab_id)

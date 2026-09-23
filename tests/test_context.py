@@ -22,6 +22,14 @@ CONTEXT = {
 
 
 def env(**overrides):
+    """Build a plugin environment with the default invocation context.
+
+    Args:
+        **overrides: Environment values to replace; None removes a variable.
+
+    Returns:
+        Dictionary of environment variable names and string values.
+    """
     base = {
         "HERDR_ENV": "1",
         "HERDR_PLUGIN_ID": "my-herdr",

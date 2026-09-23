@@ -1,6 +1,5 @@
 """fork-tab: the argv sent, and what happens when the fork does not come up."""
 import json
-import os
 import unittest
 from unittest import mock
 
@@ -39,8 +38,20 @@ TAB_CREATED = {
 SID = AGENT["agent_session"]["value"]
 
 
-def agent_get(**overrides):
-    return support.ok({"agent": dict(AGENT, **overrides), "type": "agent_info"})
+def agent_get(kind="claude", **overrides):
+    """Build an agent-info CLI response from the default forkable pane.
+
+    Args:
+        kind: Agent kind string used for pane and session metadata; defaults to claude.
+        **overrides: Agent fields to replace after setting the kind and session metadata.
+
+    Returns:
+        Completed subprocess result containing a JSON agent_info envelope.
+    """
+    agent = dict(AGENT, agent=kind,
+                 agent_session=dict(AGENT["agent_session"], agent=kind, source="herdr:" + kind))
+    agent.update(overrides)
+    return support.ok({"agent": agent, "type": "agent_info"})
 
 
 class ForkTest(unittest.TestCase):
@@ -60,7 +71,20 @@ class ForkTest(unittest.TestCase):
         }
 
     def run_fork(self, *answers, **kwargs):
-        """Run the action with `answers` replayed in order. Returns the recorder."""
+        """Run fork-tab with mocked CLI responses and shell readiness.
+
+        Args:
+            *answers: Completed subprocess results to replay in call order.
+            **kwargs: Optional ready boolean (default True) for the readiness poll and
+                env dictionary overriding the isolated environment. None env values
+                remove variables. Other keys are ignored.
+
+        Returns:
+            Recorder containing CLI calls; self.exit_code holds the action's result.
+
+        Raises:
+            MyHerdrError: Validation, tab creation, readiness, or agent startup fails.
+        """
         recorder = support.Recorder(*answers)
         ready = kwargs.pop("ready", True)
         env = dict(self.env)
@@ -122,6 +146,31 @@ class ForkTest(unittest.TestCase):
             agent_get(workspace_id="w3"), support.ok(TAB_CREATED), support.ok({}))
         self.assertEqual(recorder.calls[1][:4], ["tab", "create", "--workspace", "w3"])
 
+    def test_codex_named_and_unnamed_forks_use_exact_argv_and_only_codex_environment(self):
+        for name in (None, "", "it's \"$HOME\" -- & moreé"):
+            for foreground_cwd in (None, "/home/user/project/sub dir"):
+                with self.subTest(name=name, cwd=foreground_cwd):
+                    recorder = support.Recorder(
+                        agent_get("codex", foreground_cwd=foreground_cwd, workspace_id="w3"),
+                        support.ok(TAB_CREATED), support.ok({}))
+                    with mock.patch.object(herdr, "run", recorder):
+                        with mock.patch.object(herdr, "wait_shell_ready", return_value=True):
+                            result = fork.fork_into_new_tab("w1:p1", name, env={
+                                "CODEX_HOME": "/home/user/codex alt",
+                                "CLAUDE_CONFIG_DIR": "/home/user/claude-alt",
+                            })
+                    label = ["--label", name] if name else []
+                    self.assertEqual(recorder.calls, [
+                        ["agent", "get", "w1:p1"],
+                        ["tab", "create", "--workspace", "w3", "--cwd",
+                         foreground_cwd or AGENT["cwd"]] + label +
+                        ["--env", "CODEX_HOME=/home/user/codex alt", "--focus"],
+                        ["agent", "start", fork.temp_agent_name(), "--kind", "codex",
+                         "--pane", "w1:p9", "--timeout", "60000", "--", "fork", SID],
+                        ["agent", "rename", "w1:p9", "--clear"],
+                    ])
+                    self.assertEqual(result, {"tab_id": "w1:t9", "pane_id": "w1:p9"})
+
     # -- refusals ---------------------------------------------------------
 
     def test_a_pane_without_an_agent_is_refused_before_anything_is_created(self):
@@ -133,13 +182,13 @@ class ForkTest(unittest.TestCase):
         self.assertIn("no agent", str(caught.exception))
         self.assertEqual(recorder.commands, ["agent get w1:p1"])
 
-    def test_a_non_claude_pane_says_so(self):
-        recorder = support.Recorder(agent_get(agent="codex"))
+    def test_an_unsupported_agent_says_so(self):
+        recorder = support.Recorder(agent_get(agent="gemini"))
         with self.assertRaises(MyHerdrError) as caught:
             with mock.patch.dict("os.environ", self.env, clear=True):
                 with mock.patch.object(herdr, "run", recorder):
                     fork_tab.main([])
-        self.assertIn("codex", str(caught.exception))
+        self.assertIn("gemini", str(caught.exception))
         self.assertEqual(len(recorder.commands), 1)
 
     def test_a_missing_session_id_points_at_the_claude_integration(self):
@@ -157,35 +206,39 @@ class ForkTest(unittest.TestCase):
     # -- cleanup ----------------------------------------------------------
 
     def test_the_tab_is_closed_when_the_agent_does_not_come_up(self):
-        recorder = support.Recorder(
-            agent_get(), support.ok(TAB_CREATED),
-            support.failure("agent_start_failed", "claude never appeared"))
-        with self.assertRaises(MyHerdrError) as caught:
-            with mock.patch.dict("os.environ", self.env, clear=True):
-                with mock.patch.object(herdr, "run", recorder):
-                    with mock.patch.object(herdr, "wait_shell_ready", return_value=True):
-                        fork_tab.main([])
-        self.assertIn("claude never appeared", str(caught.exception))
-        # The tab goes, and focus comes back to where the key was pressed:
-        # closing the focused tab would otherwise drop us on a random one.
-        self.assertEqual(recorder.commands[-2:],
-                         ["tab close w1:t9", "agent focus w1:p1"])
-        self.assertNotIn("agent rename w1:p9 --clear", recorder.commands)
+        for kind in ("claude", "codex"):
+            with self.subTest(kind=kind):
+                recorder = support.Recorder(
+                    agent_get(kind), support.ok(TAB_CREATED),
+                    support.failure("agent_start_failed", "%s never appeared" % kind))
+                with self.assertRaises(MyHerdrError) as caught:
+                    with mock.patch.dict("os.environ", self.env, clear=True):
+                        with mock.patch.object(herdr, "run", recorder):
+                            with mock.patch.object(herdr, "wait_shell_ready", return_value=True):
+                                fork_tab.main([])
+                self.assertIn("%s never appeared" % kind, str(caught.exception))
+                # The tab goes, and focus comes back to where the key was pressed:
+                # closing the focused tab would otherwise drop us on a random one.
+                self.assertEqual(recorder.commands[-2:],
+                                 ["tab close w1:t9", "agent focus w1:p1"])
+                self.assertNotIn("agent rename w1:p9 --clear", recorder.commands)
 
     def test_a_shell_that_never_settles_closes_the_tab_without_starting_anything(self):
-        recorder = support.Recorder(agent_get(), support.ok(TAB_CREATED))
-        with self.assertRaises(MyHerdrError) as caught:
-            with mock.patch.dict("os.environ", self.env, clear=True):
-                with mock.patch.object(herdr, "run", recorder):
-                    with mock.patch.object(herdr, "wait_shell_ready", return_value=False):
-                        fork_tab.main([])
-        self.assertIn("did not reach a prompt", str(caught.exception))
-        self.assertEqual(recorder.commands, [
-            "agent get w1:p1",
-            "tab create --workspace w1 --cwd /home/user/project --focus",
-            "tab close w1:t9",
-            "agent focus w1:p1",
-        ])
+        for kind in ("claude", "codex"):
+            with self.subTest(kind=kind):
+                recorder = support.Recorder(agent_get(kind), support.ok(TAB_CREATED))
+                with self.assertRaises(MyHerdrError) as caught:
+                    with mock.patch.dict("os.environ", self.env, clear=True):
+                        with mock.patch.object(herdr, "run", recorder):
+                            with mock.patch.object(herdr, "wait_shell_ready", return_value=False):
+                                fork_tab.main([])
+                self.assertIn("did not reach a prompt", str(caught.exception))
+                self.assertEqual(recorder.commands, [
+                    "agent get w1:p1",
+                    "tab create --workspace w1 --cwd /home/user/project --focus",
+                    "tab close w1:t9",
+                    "agent focus w1:p1",
+                ])
 
     def test_a_tab_created_without_a_pane_is_closed_again(self):
         recorder = support.Recorder(
@@ -201,6 +254,18 @@ class ForkTest(unittest.TestCase):
         calls = []
 
         def run(*args, **kwargs):
+            """Record CLI calls and simulate interruption during agent startup.
+
+            Args:
+                *args: CLI arguments to record and match against fixture responses.
+                **kwargs: Wrapper options accepted for compatibility and ignored.
+
+            Returns:
+                Completed subprocess result for agent lookup, tab creation, or cleanup.
+
+            Raises:
+                KeyboardInterrupt: The command starts an agent.
+            """
             calls.append([str(a) for a in args])
             if args[:2] == ("agent", "start"):
                 raise KeyboardInterrupt
@@ -249,69 +314,12 @@ class ArgumentTest(unittest.TestCase):
         self.assertNotIn("--env", fork.tab_create_args("w1", "/p", env={"CLAUDE_CONFIG_DIR": ""}))
 
     def test_the_temporary_agent_name_matches_herdrs_rule(self):
-        import re
         self.assertRegex(fork.temp_agent_name(), r"^[a-z][a-z0-9_-]{0,31}$")
 
     def test_abandoning_nothing_does_nothing(self):
         with mock.patch.object(herdr, "run") as run:
             fork.abandon(None, None)
         run.assert_not_called()
-
-
-class SavedConversationTest(unittest.TestCase):
-    """The check that the session has something for `--resume` to load."""
-
-    def setUp(self):
-        import shutil
-        import tempfile
-        self.home = tempfile.mkdtemp(prefix="my-herdr-test-")
-        self.addCleanup(shutil.rmtree, self.home, True)
-        self.projects = os.path.join(self.home, ".claude", "projects")
-
-    def save(self, session_id, root=None):
-        project = os.path.join(root or self.projects, "-home-user-project")
-        if not os.path.isdir(project):
-            os.makedirs(project)
-        open(os.path.join(project, session_id + ".jsonl"), "w").close()
-
-    def test_a_saved_conversation_is_found_in_any_project(self):
-        self.save(SID)
-        self.assertIs(fork.conversation_saved(SID, {"HOME": self.home}), True)
-
-    def test_an_unsaved_one_is_not(self):
-        # A session forked before its first message, or an id herdr kept
-        # from before a resume: Claude has nothing under that name.
-        self.save("another-session")
-        self.assertIs(fork.conversation_saved(SID, {"HOME": self.home}), False)
-
-    def test_no_store_at_all_means_cannot_tell(self):
-        # Refusing on a guess could block a fork that would have worked.
-        self.assertIsNone(fork.conversation_saved(SID, {"HOME": self.home}))
-
-    def test_claude_config_dir_is_where_it_looks(self):
-        # The same directory the fork's `claude --resume` will read.
-        alt = os.path.join(self.home, "alt")
-        self.save(SID, os.path.join(alt, "projects"))
-        self.assertIs(fork.conversation_saved(
-            SID, {"HOME": self.home, "CLAUDE_CONFIG_DIR": alt}), True)
-        os.makedirs(self.projects)
-        self.assertIs(fork.conversation_saved(SID, {"HOME": self.home}), False)
-
-    def test_glob_characters_in_an_id_match_only_themselves(self):
-        self.save("abc")
-        self.assertIs(fork.conversation_saved("*", {"HOME": self.home}), False)
-        self.assertIs(fork.conversation_saved("[a]bc", {"HOME": self.home}), False)
-
-    def test_an_unsaved_session_is_refused_before_any_tab_exists(self):
-        self.save("another-session")
-        recorder = support.Recorder(agent_get())
-        with self.assertRaises(MyHerdrError) as caught:
-            with mock.patch.dict("os.environ", {"HOME": self.home, "HERDR_PANE_ID": "w1:p1"},
-                                 clear=True):
-                with mock.patch.object(herdr, "run", recorder):
-                    fork_tab.main([])
-        self.assertIn("no saved conversation", str(caught.exception))
-        self.assertEqual(recorder.commands, ["agent get w1:p1"])
 
 
 class EndToEndTest(support.EndToEndCase):

@@ -83,9 +83,31 @@ class MockTest(support.EndToEndCase):
     """The fake herdr itself, so a broken mock cannot fake a passing suite."""
 
     def herdr(self, *args, **env):
+        """Run the mock CLI with convenient positional arguments.
+
+        Args:
+            *args: String CLI arguments after the executable name.
+            **env: String environment overrides, such as HERDR_MOCK_FAIL.
+
+        Returns:
+            Completed subprocess result with captured text output.
+        """
         return self.invoke_mock(args, env)
 
     def invoke_mock(self, args, env):
+        """Run the mock CLI using this test's fixture directory and call log.
+
+        Args:
+            args: Sequence of string CLI arguments after the executable name.
+            env: Dictionary of string overrides for the subprocess environment.
+
+        Returns:
+            Completed subprocess result with stdout, stderr, and exit status.
+
+        Raises:
+            OSError: The subprocess cannot be started.
+            subprocess.TimeoutExpired: The mock exceeds the 30-second timeout.
+        """
         import subprocess
         import sys
         environ = dict(os.environ, HERDR_MOCK_LOG=self.log, HERDR_MOCK_DIR=support.FIXTURES)

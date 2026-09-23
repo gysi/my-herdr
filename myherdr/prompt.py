@@ -31,6 +31,19 @@ def ask(label, stdin=None, stdout=None):
 
     Without a terminal (tests, piped input) this falls back to reading a plain
     line, where end of input is the only way to cancel.
+
+    Args:
+        label (str): Prompt text written before input is read.
+        stdin (TextIO or None): Input stream; None uses sys.stdin. A real TTY
+            is temporarily put in cbreak mode and restored before returning.
+        stdout (TextIO or None): Prompt and echo destination; None uses sys.stdout.
+
+    Returns:
+        str or None: Accepted text without its line ending, including an empty
+            string; None for cancellation or end of input.
+
+    Raises:
+        OSError: Stream or terminal operations fail.
     """
     stdin = stdin or sys.stdin
     stdout = stdout or sys.stdout
@@ -39,10 +52,11 @@ def ask(label, stdin=None, stdout=None):
 
     try:
         fd = stdin.fileno()
-        interactive = os.isatty(fd)
+        if not os.isatty(fd):
+            fd = None
     except (AttributeError, ValueError, OSError):
-        interactive = False
-    if not interactive:
+        fd = None
+    if fd is None:
         line = stdin.readline()
         stdout.write("\n")
         return line.rstrip("\r\n") if line else None
@@ -71,8 +85,16 @@ def ask(label, stdin=None, stdout=None):
 def read_line(read, pending, write):
     """The line editor itself, free of any terminal so it can be tested.
 
-    `read()` returns the next byte (b"" at end of input), `pending()` says
-    whether another byte is already waiting, `write(text)` echoes.
+    Args:
+        read (Callable[[], bytes]): Read one byte, or return b"" at end of input.
+        pending (Callable[[], bool]): Indicate whether another byte is waiting,
+            allowing escape sequences to be distinguished from a lone Esc.
+        write (Callable[[str], object]): Echo text and line-editing control
+            characters; its return value is ignored.
+
+    Returns:
+        str or None: Decoded UTF-8 text on Enter, or None for Esc, Ctrl-C,
+            Ctrl-D, or end of input. Enter alone returns an empty string.
     """
     decode = codecs.getincrementaldecoder("utf-8")(errors="replace").decode
     chars = []
@@ -113,6 +135,12 @@ def skip_sequence(read, pending):
 
     CSI (`Esc [`) and SS3 (`Esc O`) sequences end at the first byte in
     0x40-0x7E; anything else after Esc is an Alt+key chord, one byte long.
+
+    Args:
+        read (Callable[[], bytes]): Read the next byte after the consumed Esc;
+            b"" marks end of input.
+        pending (Callable[[], bool]): Indicate whether more sequence bytes
+            are available without an indefinite wait.
     """
     introducer = read()
     if introducer not in (b"[", b"O"):

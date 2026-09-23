@@ -41,11 +41,30 @@ AGENT = {
 
 
 def agent_get(**overrides):
+    """Build an agent-info CLI response from the popup's default source pane.
+
+    Args:
+        **overrides: Agent fields to replace, including deliberately invalid values.
+
+    Returns:
+        Completed subprocess result containing a JSON agent_info envelope.
+    """
     return support.ok({"agent": dict(AGENT, **overrides), "type": "agent_info"})
 
 
 class ActionTest(unittest.TestCase):
     def run_action(self, *answers):
+        """Run fork-tab-ask with an isolated environment and mocked CLI responses.
+
+        Args:
+            *answers: Completed subprocess results to replay in call order.
+
+        Returns:
+            Recorder containing CLI calls; self.exit_code holds the action's result.
+
+        Raises:
+            MyHerdrError: Source validation or popup opening fails.
+        """
         recorder = support.Recorder(*answers)
         with mock.patch.dict("os.environ", ENV, clear=True):
             with mock.patch.object(herdr, "run", recorder):
@@ -61,9 +80,18 @@ class ActionTest(unittest.TestCase):
             "--env MH_SOURCE_PANE=w1:p1",
         ])
 
+    def test_codex_uses_the_same_popup_and_only_passes_the_pane(self):
+        recorder = self.run_action(agent_get(agent="codex"), support.ok({"type": "ok"}))
+        self.assertEqual(self.exit_code, 0)
+        self.assertEqual(recorder.calls, [
+            ["agent", "get", "w1:p1"],
+            ["plugin", "pane", "open", "--plugin", "my-herdr", "--entrypoint", "fork-prompt",
+             "--env", "MH_SOURCE_PANE=w1:p1"],
+        ])
+
     def test_a_pane_that_cannot_be_forked_never_opens_the_popup(self):
         # Refuse before anything is typed, not after.
-        for answer in (agent_get(agent="codex"), agent_get(agent_session={}),
+        for answer in (agent_get(agent="gemini"), agent_get(agent_session={}),
                        support.failure("agent_not_found")):
             recorder = support.Recorder(answer)
             with self.assertRaises(MyHerdrError):
@@ -100,6 +128,19 @@ class PopupTest(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.state, True)
 
     def run_popup(self, answer, env=None, *answers):
+        """Run the popup with a simulated answer and record its action invocation.
+
+        Args:
+            answer: Tab-name string, an empty string for no name, or None to cancel.
+            env: Dictionary of string environment overrides; None uses popup defaults.
+            *answers: Completed CLI results to replay; omitted answers default to success.
+
+        Returns:
+            Recorder containing CLI calls; self.exit_code holds the popup's result.
+
+        Raises:
+            MyHerdrError: Saving the request or invoking fork-tab fails.
+        """
         recorder = support.Recorder(*(answers or (support.ok({"type": "ok"}),)))
         env = dict({"MH_SOURCE_PANE": "w1:p1", "HERDR_PLUGIN_CONTEXT_JSON": "{}",
                     "HERDR_PLUGIN_ID": "my-herdr", "HERDR_PLUGIN_STATE_DIR": self.state},
@@ -112,6 +153,7 @@ class PopupTest(unittest.TestCase):
         return recorder
 
     def pending(self):
+        """Consume and return the pending pane_id/name request dict, or None."""
         return fork_request.take(self.state)
 
     def test_a_name_is_left_for_fork_tab_which_herdr_then_runs(self):
@@ -193,6 +235,7 @@ class ForkTabRequestTest(unittest.TestCase):
         self.env = dict(ENV, HERDR_PLUGIN_STATE_DIR=self.state)
 
     def run_fork_tab(self):
+        """Run fork-tab against the test request store and return its mocked fork call."""
         with mock.patch.dict("os.environ", self.env, clear=True):
             with mock.patch.object(fork_tab.fork, "fork_into_new_tab",
                                    return_value={"tab_id": "w1:t9", "pane_id": "w1:p9"}) as run:

@@ -41,6 +41,18 @@ MUTATIONS = (
 
 
 def main(argv):
+    """Log a mock CLI call and emit a fixture or configured error response.
+
+    Args:
+        argv (list[str]): herdr arguments after the executable, including options.
+
+    Returns:
+        int: 0 after a success response, or 1 after a simulated CLI failure.
+
+    Raises:
+        OSError: The configured command log cannot be written.
+        ValueError: A selected fixture is not valid JSON.
+    """
     log_path = os.environ.get("HERDR_MOCK_LOG")
     if log_path:
         with open(log_path, "a") as handle:
@@ -68,7 +80,18 @@ def main(argv):
 
 
 def load(words):
-    """Most specific fixture wins: `agent get w1:p8` -> `agent_get_w1_p8`, then `agent_get`."""
+    """Load the most specific fixture matching a command prefix.
+
+    Args:
+        words (list[str]): Command words after flag-prefixed arguments are removed.
+            For example, ``agent get w1:p8`` tries agent_get_w1_p8 before agent_get.
+
+    Returns:
+        dict or None: Fixture response, or None when no readable fixture matches.
+
+    Raises:
+        ValueError: A readable fixture contains invalid JSON.
+    """
     directory = os.environ.get("HERDR_MOCK_DIR") or DEFAULT_FIXTURES
     for size in range(len(words), 0, -1):
         name = re.sub(r"[^A-Za-z0-9]+", "_", " ".join(words[:size]))
@@ -82,6 +105,14 @@ def load(words):
 
 
 def matching_failure(command):
+    """Find the first HERDR_MOCK_FAIL rule whose prefix matches a command.
+
+    Args:
+        command (str): Space-joined command words used for prefix matching.
+
+    Returns:
+        tuple[str, str] or None: Error code and message, or None when no rule matches.
+    """
     spec = os.environ.get("HERDR_MOCK_FAIL")
     if not spec:
         return None

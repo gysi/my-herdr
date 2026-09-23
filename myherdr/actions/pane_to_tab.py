@@ -17,6 +17,17 @@ from ..context import Context
 
 
 def main(args):
+    """Move and focus the invoking pane in a new tab when it shares its current tab.
+
+    Args:
+        args (list[str]): Dispatcher arguments; unused by this headless action.
+
+    Returns:
+        int: 0 after a move or a notification explaining why no move occurred.
+
+    Raises:
+        MyHerdrError: The focused pane cannot be found or the move command fails.
+    """
     ctx = Context()
     pane_id = herdr.focused_pane(ctx)
 
@@ -51,6 +62,13 @@ def is_alone(pane_id, ctx):
 
     Best effort: when the tab cannot be identified, say no and let the move
     proceed. A pointless move is a smaller failure than refusing a valid one.
+
+    Args:
+        pane_id (str): Source pane whose tab occupancy should be checked.
+        ctx (Context): Invocation context used for tab and workspace lookups.
+
+    Returns:
+        bool: True only when the matching tab reports exactly one pane.
     """
     tab_id = tab_of(pane_id, ctx)
     if not tab_id:
@@ -62,7 +80,15 @@ def is_alone(pane_id, ctx):
 
 
 def tabs(ctx):
-    """Every tab in this workspace, or an empty list if herdr will not say."""
+    """List tabs in the invocation's workspace through a best-effort CLI read.
+
+    Args:
+        ctx (Context): Provides the workspace ID. If absent, herdr chooses the
+            scope of its unfiltered tab list.
+
+    Returns:
+        list[dict]: Tab records, or an empty list when unavailable.
+    """
     workspace_id = ctx.workspace_id
     args = ["tab", "list"]
     if workspace_id:
@@ -71,7 +97,15 @@ def tabs(ctx):
 
 
 def tab_of(pane_id, ctx):
-    """The tab holding `pane_id`: from the context if it describes that pane."""
+    """Find the source tab, preferring a matching invocation context.
+
+    Args:
+        pane_id (str): Pane whose containing tab is needed.
+        ctx (Context): Invocation context to consult before querying herdr.
+
+    Returns:
+        str or None: Tab ID, or None when neither source provides one.
+    """
     if ctx.pane_id == pane_id and ctx.tab_id:
         return ctx.tab_id
     return pane_info(pane_id).get("tab_id")
@@ -82,6 +116,13 @@ def workspace_of(pane_id, ctx):
 
     Passing it explicitly keeps the new tab where the pane already lives,
     rather than wherever the server considers current.
+
+    Args:
+        pane_id (str): Source pane ID, whose prefix is the last-resort workspace.
+        ctx (Context): Invocation context preferred when it describes this pane.
+
+    Returns:
+        str: Workspace ID from the matching context, pane lookup, or pane prefix.
     """
     if ctx.pane_id == pane_id and ctx.workspace_id:
         return ctx.workspace_id
@@ -89,5 +130,12 @@ def workspace_of(pane_id, ctx):
 
 
 def pane_info(pane_id):
-    """One pane as herdr sees it, or an empty dict. `pane get` takes a positional id."""
+    """Read a pane's metadata through herdr's positional pane-get argument.
+
+    Args:
+        pane_id (str): Pane ID to query.
+
+    Returns:
+        dict: Pane record, or an empty dict if the lookup fails or returns no pane.
+    """
     return (herdr.try_json("pane", "get", pane_id) or {}).get("pane") or {}

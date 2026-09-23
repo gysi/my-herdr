@@ -21,7 +21,7 @@ way.
 | Action | What it does |
 |---|---|
 | `my-herdr.attention-next` | Go to the agent that needs you, or cycle through all agents when none does |
-| `my-herdr.fork-tab` | Fork the focused pane's Claude Code session into a new tab |
+| `my-herdr.fork-tab` | Fork the focused pane's Claude Code or Codex session into a new tab |
 | `my-herdr.fork-tab-ask` | The same, asking for the new tab's name first |
 | `my-herdr.pane-to-tab` | Move the focused pane, and the process in it, into a new tab |
 | `my-herdr.ping` | Write the plugin environment to the plugin log, to verify an install |
@@ -51,24 +51,34 @@ you somebody needs you and this key takes you there, with nothing covering the s
 
 ### `fork-tab`
 
-For the moment you want to try something without losing where you are. The Claude Code session in the
-focused pane is forked into a new tab: the fork starts with the whole conversation, and the session
-you forked from carries on untouched.
+For the moment you want to try something without losing where you are. The Claude Code or Codex
+session in the focused pane is detected automatically and forked into a new tab: the fork starts
+with the saved conversation and its own session ID, and the source session carries on untouched.
 
-The new tab opens in the same workspace and the same directory — Claude keys its sessions by project
-directory, so a fork started anywhere else would not find the session to resume. You land in it
-straight away and watch the fork come up, rather than waiting on the old pane for a replay you cannot
-see. A fork that fails to start takes its tab with it and puts you back where you pressed the key,
-rather than leaving an empty shell behind.
+The new tab opens in the source workspace and the agent's foreground directory, falling back to
+the pane's directory. You land in it straight away and watch the fork come up. A fork that fails
+to start closes its tab and puts you back where you pressed the key.
 
 The tab keeps herdr's generic name, for the same reason `pane-to-tab` does. To name it, use
 `fork-tab-ask`.
 
-It needs herdr's Claude integration: `herdr integration install claude`, which is how herdr learns a
-session's id in the first place. Without it — or in a session that started before it was installed —
-the action says so and does nothing.
+Install the matching herdr integration (`herdr integration install claude` or
+`herdr integration install codex`), then start or resume the session in the pane. Both agents need
+a nonempty session reference of kind `id` from herdr. Missing or conflicting session metadata is
+refused before creating a tab or opening a naming popup. The plugin never installs integrations.
 
-The fork resumes the session from what Claude has saved, under the id herdr holds for the pane. A
+Codex runs `codex fork <session-id>`. Codex itself loads and validates the saved conversation;
+the plugin does not search its transcripts or check its storage beforehand. A missing conversation
+can therefore leave the new tab visible until startup times out and cleanup closes it.
+
+For alternate configuration directories, the plugin forwards `CLAUDE_CONFIG_DIR` for Claude and
+`CODEX_HOME` for Codex when set in the action's environment, inherited from the herdr server.
+Overrides set only in the source pane's shell are not discovered.
+
+Every fork logs its source pane, agent kind and session ID (`fork: <pane> runs <agent> session
+<id> …`). Claude also logs the result of its saved-conversation check.
+
+For Claude, the fork resumes what Claude has saved under the id herdr holds for the pane. A
 session with nothing saved yet — one that has not had its first message — cannot be forked, and the
 action says so at once instead of opening a tab for a fork that cannot start.
 
@@ -93,7 +103,9 @@ at a particular message.
 
 `fork-tab` with a name, the way herdr's own new tab asks for one. A small popup asks for the tab
 name: **Enter** forks, **Esc** cancels, and an empty name forks with herdr's default name. The name
-labels the tab and becomes the Claude session's name, so it is also what `claude --resume` lists.
+labels the tab for either agent. For Claude it also becomes the saved session's name, so it is
+what `claude --resume` lists. For Codex it names only the herdr tab; no session name or initial
+prompt is sent to Codex.
 
 The pane is checked before the popup opens, so a pane that cannot be forked is reported straight
 away rather than after you have typed a name. Once you press Enter the popup closes at once and
@@ -101,7 +113,9 @@ herdr runs `fork-tab` with that name, so you watch the fork come up in the new t
 `fork-tab`, and its output lands in the plugin log like every other action's.
 
 herdr actions take no arguments, so the name travels as a short-lived `fork-request.json` in the
-plugin state directory. It is used once, ignored after ten seconds, and removed as it is read.
+plugin state directory, alongside the source pane and timestamp. It is used once, ignored after
+ten seconds, and removed as it is read. The fork action re-reads the pane's agent and session
+when it executes.
 
 A named tab is left alone by tab-renaming plugins: that is what a name you chose should mean.
 
@@ -155,6 +169,9 @@ today, and nobody else can change what it does tomorrow.
   attached client from that release on, which is what makes the jump work.
 - **python3 3.9 or newer**, resolvable from the herdr server's `PATH` — which is not necessarily the
   `python3` in your shell.
+- **For fork actions:** Claude Code or Codex CLI (with `codex fork` support), available in the
+  new pane's shell, and the matching herdr integration installed. Start or resume the source
+  session in its pane after installing the integration.
 
 ## Troubleshooting
 

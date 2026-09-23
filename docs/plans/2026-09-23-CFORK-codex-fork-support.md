@@ -1,12 +1,15 @@
 # Codex support for fork actions
 
 Slug: CFORK
-Status: Planned
+Status: Completed
+
+Implementation and automated verification are complete (`make check`: 239 tests passed).
+Live smoke testing succeeded, as confirmed by the user.
 
 ## Problem and intended behavior
 
-`fork-tab` and `fork-tab-ask` currently support only Claude Code. Extend both actions to detect
-Claude Code or Codex automatically, retaining the existing action IDs and keybindings. A Codex
+`fork-tab` and `fork-tab-ask` detect Claude Code or Codex automatically, retaining the existing
+action IDs and keybindings. A Codex
 fork opens in a new tab with the source conversation and its own session ID, leaving the source
 session running.
 
@@ -72,33 +75,31 @@ needed. Runtime code remains compatible with Python 3.9 and uses only the standa
 
 ## Implementation and verification
 
-- [ ] Extract agent-specific behavior into `fork_agents.py` and introduce the shared
+- [x] Extract agent-specific behavior into `fork_agents.py` and introduce the shared
       `forkable_agent()` validation path. Preserve existing Claude behavior.
-- [ ] Add Codex launch arguments, agent-specific environment forwarding, and diagnostics.
-- [ ] Route both fork actions through shared validation and update popup wording while preserving
+- [x] Add Codex launch arguments, agent-specific environment forwarding, and diagnostics.
+- [x] Route both fork actions through shared validation and update popup wording while preserving
       the request format and lifecycle.
-- [ ] Preserve Claude test coverage and move agent-specific helper tests alongside the new module.
+- [x] Preserve Claude test coverage and move agent-specific helper tests alongside the new module.
       Add Codex named/unnamed cases, exact argv assertions, `CODEX_HOME` forwarding, and checks
       that Claude arguments and transcript checks are not used for Codex.
-- [ ] Test unsupported agents, missing/unusable session references, and conflicting agent
+- [x] Test unsupported agents, missing/unusable session references, and conflicting agent
       metadata. Refuse these before creating a tab or opening a popup.
-- [ ] Exercise startup failure and shell-timeout cleanup for both agents.
-- [ ] Add mock-backed end-to-end coverage for Codex direct forks and the named-popup handoff.
+- [x] Exercise startup failure and shell-timeout cleanup for both agents.
+- [x] Add mock-backed end-to-end coverage for Codex direct forks and the named-popup handoff.
       Isolate tests from inherited `CODEX_HOME` and `CLAUDE_CONFIG_DIR`.
-- [ ] Update manifest action descriptions, README requirements and naming behavior, contributor
+- [x] Update manifest action descriptions, README requirements and naming behavior, contributor
       guidance, and research notes to cover both agents. Document the Codex validation limitation.
-- [ ] Bump the plugin from `0.3.0` to `0.4.0` and add a changelog entry, retaining herdr `0.9.1` as
+- [x] Bump the plugin from `0.3.0` to `0.4.0` and add a changelog entry, retaining herdr `0.9.1` as
       the minimum. Run `make check`.
-- [ ] With the user, smoke-test Codex `fork-tab`: inherited conversation, distinct session ID,
+- [x] With the user, smoke-test Codex `fork-tab`: inherited conversation, distinct session ID,
       unchanged source session, correct workspace/directory, immediate focus, and cleared
       temporary agent name. Verify that the fork can itself be forked again.
-- [ ] With the user, separately smoke-test Codex `fork-tab-ask`: popup dismissal, named and unnamed
+- [x] With the user, separately smoke-test Codex `fork-tab-ask`: popup dismissal, named and unnamed
       tabs, cancellation, and tab-only naming. Confirm Claude forks still behave as documented.
 
-All automated tests use the mock herdr. Live tests and any linking, installing, or configuration
-changes require the user's approval and are performed one action at a time. Leave manual checks
-pending until performed. Do not stage, commit, or push; propose
-`feat(CFORK): support Codex in fork actions` when the implementation is ready.
+All automated tests use the mock herdr. Manual verification is recorded from the user's report.
+Suggested commit: `feat(CFORK): support Codex in fork actions`.
 
 ## Evidence and references
 
