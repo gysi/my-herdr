@@ -9,7 +9,7 @@
 
 id = "my-herdr"                 # lowercase and dot-free: clean state dirs, unambiguous qualified ids
 name = "my-herdr"
-version = "0.4.0"
+version = "0.5.1"
 min_herdr_version = "0.9.1"     # current stable; `agent focus` moves the client only from 0.9.1 on
 description = "Small herdr actions for working with AI coding agents: one key to reach whichever agent needs you, fork a Claude Code or Codex session into a new tab, or give a pane a tab of its own."
 platforms = ["linux", "macos"]
@@ -47,9 +47,16 @@ command = ["python3", "bin/my-herdr", "ping"]
 [[actions]]
 id = "attention-next"
 title = "my-herdr: next agent"
-description = "Focus the agent waiting longest, or cycle through all agents when none is waiting"
+description = "Focus an urgent agent, otherwise move down the local sidebar's agent list"
 contexts = ["global", "workspace", "pane"]
 command = ["python3", "bin/my-herdr", "attention-next"]
+
+[[actions]]
+id = "attention-prev"
+title = "my-herdr: previous agent"
+description = "Move up the local sidebar's agent list without urgency interruptions"
+contexts = ["global", "workspace", "pane"]
+command = ["python3", "bin/my-herdr", "attention-prev"]
 
 # ---- panes: a real terminal, the only way to ask the user something ----
 # A pane's working directory is not necessarily the plugin root, so the command

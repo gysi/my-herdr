@@ -150,6 +150,8 @@ class EndToEndCase(unittest.TestCase):
             # A fresh home per test: nothing of the developer's leaks in, and a
             # test can build a Claude store under it (see claude_store()).
             "HOME": os.path.join(self.tmp, "home"),
+            "XDG_CONFIG_HOME": os.path.join(self.tmp, "config"),
+            "XDG_STATE_HOME": os.path.join(self.tmp, "state"),
         })
         # A value of None removes the variable, so a test can assert on what
         # happens without one even if the developer's own shell exports it.

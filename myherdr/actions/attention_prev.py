@@ -1,9 +1,9 @@
-"""Focus an urgent agent, otherwise the next sidebar row."""
+"""Focus the previous sidebar row without urgency interruptions."""
 from ..attention import navigate
 
 
 def main(args):
-    """Focus the next agent and save navigation state after success.
+    """Focus the previous agent and save navigation state after success.
 
     Args:
         args (list[str]): Dispatcher arguments; unused by this headless action.
@@ -14,4 +14,4 @@ def main(args):
     Raises:
         MyHerdrError: herdr cannot list agents or focus the selected target.
     """
-    return navigate(1)
+    return navigate(-1)

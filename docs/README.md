@@ -35,6 +35,8 @@ None.
 
 ## Completed plans
 
+- `ATTN`: [Sidebar attention navigation](plans/2026-09-24-ATTN-sidebar-attention-navigation.md).
+  All 265 automated tests passed; the user confirmed navigation in grouped and priority views.
 - `CFORK`: [Codex support for fork actions](plans/2026-09-23-CFORK-codex-fork-support.md).
   Automated checks passed; the user confirmed successful live smoke testing.
 - [Initial development](plans/initial-development.md): the plugin's initial design, implementation

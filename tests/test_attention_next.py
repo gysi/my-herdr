@@ -8,8 +8,8 @@ from unittest import mock
 
 import support  # noqa: F401  (puts the plugin root on sys.path)
 
-from myherdr import herdr
-from myherdr.actions import attention_next
+from myherdr import attention as attention_next, herdr
+from myherdr.actions import attention_next as next_action
 from myherdr.context import Context
 from myherdr.errors import MyHerdrError
 
@@ -66,17 +66,15 @@ class RingTest(unittest.TestCase):
         """
         return [a["pane_id"] for a in attention_next.ring(result)]
 
-    def test_workspace_then_tab_then_pane(self):
+    def test_grouped_preserves_api_workspace_tab_and_layout_order(self):
         result = listing(
             agent("w2:p1", tab="w2:t1"), agent("w1:p9", tab="w1:t2"),
             agent("w1:p2", tab="w1:t1"))
-        self.assertEqual(self.ids(result), ["w1:p2", "w1:p9", "w2:p1"])
+        self.assertEqual(self.ids(result), ["w2:p1", "w1:p9", "w1:p2"])
 
-    def test_numbers_in_ids_sort_as_numbers(self):
-        # Lexically "w1:p10" precedes "w1:p2", which would make the walk jump
-        # around; the walk should feel like the sidebar looks.
+    def test_grouped_does_not_sort_pane_ids(self):
         result = listing(agent("w1:p10"), agent("w1:p2"), agent("w1:p1"))
-        self.assertEqual(self.ids(result), ["w1:p1", "w1:p2", "w1:p10"])
+        self.assertEqual(self.ids(result), ["w1:p10", "w1:p2", "w1:p1"])
 
     def test_status_does_not_move_an_agent_in_the_ring(self):
         # The ring has to stay put as agents work and finish, or the walk would
@@ -268,7 +266,7 @@ class CursorFileTest(unittest.TestCase):
         attention_next.write_cursor(unwritable, "w1:p1", [agent("w1:p1")])
 
     def test_no_state_dir_means_no_cursor(self):
-        # Running the dispatcher by hand: still works, just never advances.
+        # Without persisted state, the invoking pane can still anchor navigation.
         self.assertIsNone(attention_next.cursor_path(Context(env={})))
         self.assertEqual(attention_next.read_cursor(None), {})
         attention_next.write_cursor(None, "w1:p1", [])
@@ -280,7 +278,8 @@ class ActionTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="my-herdr-action-")
         self.addCleanup(shutil.rmtree, self.tmp, True)
-        self.env = {"HERDR_PANE_ID": "w1:p9", "HERDR_PLUGIN_STATE_DIR": self.tmp}
+        self.env = {"HERDR_PANE_ID": "w1:p9", "HERDR_PLUGIN_STATE_DIR": self.tmp,
+                    "HOME": os.path.join(self.tmp, "home")}
 
     def run_action(self, *answers, **kwargs):
         """Run attention-next with mocked CLI responses and record its exit code.
@@ -307,7 +306,7 @@ class ActionTest(unittest.TestCase):
                 env[key] = value
         with mock.patch.dict("os.environ", env, clear=True):
             with mock.patch.object(herdr, "run", recorder):
-                self.exit_code = attention_next.main([])
+                self.exit_code = next_action.main([])
         return recorder
 
     def focused(self, recorder):

@@ -1002,6 +1002,36 @@ Consequence for "jump to the agent that needs me": a plain `agent list` poll at 
 
 The matching event, `pane.agent_status_changed`, carries `pane_id`, `workspace_id`, `agent_status`, `agent`, `title` and `state_labels` — but **no `tab_id`**, so an event-driven queue would have to resolve the tab itself.
 
+#### Local sidebar ordering (herdr 0.9.1)
+
+**[src]** `agent list` collects workspaces in stored order, tabs in stored order, and panes in
+layout traversal order (`src/app/agents.rs`, `collect_agent_infos`). Do not sort public IDs to
+reconstruct this order: workspace/tab reordering and pane layout can disagree with ID order.
+
+The local client uses that base order for **grouped**. **Priority** uses a stable sort by descending
+status rank (`blocked`, `done`, `working`, `idle`, `unknown`), then descending `state_change_seq`.
+The client can override this with a custom agent view; its order is not part of the public
+`agent list`/`session snapshot` response. See
+[client sidebar source](https://raw.githubusercontent.com/herdrdev/herdr/v0.9.1/src/client/shell/agent_sidebar.rs).
+
+The sort toggle is client-owned and persisted as `agent_panel_sort` (`spaces` or `priority`) in
+`<herdr state dir>/client-shell/local-<hash>.json`. The hash is FNV-1a over the UTF-8 **client** socket path,
+using offset `0xcbf29ce484222325`, multiplier `0x100000001b3`, wrapping at 64 bits and formatted
+as 16 lowercase hexadecimal digits. Plugins receive the **API** socket in `HERDR_SOCKET_PATH`:
+derive the client socket in the same parent directory as `<file stem>-client.sock`, removing the
+API filename's final extension. For example, `/run/herdr/test.sock` becomes
+`/run/herdr/test-client.sock`; `/run/herdr/custom-api` becomes `/run/herdr/custom-api-client.sock`.
+See [socket derivation source](https://raw.githubusercontent.com/herdrdev/herdr/v0.9.1/src/server/socket_paths.rs).
+Do not choose an arbitrary file from the directory. On Linux/macOS the state root is `$XDG_STATE_HOME/herdr`,
+otherwise `$HOME/.local/state/herdr`, otherwise the system temporary directory's `herdr-state`.
+See [preference source](https://raw.githubusercontent.com/herdrdev/herdr/v0.9.1/src/client/shell/preferences.rs).
+
+Absent a saved override, the client uses `[ui].agent_panel_sort`, default `spaces`; `workspaces`
+is an accepted alias. Config is `$HERDR_CONFIG_PATH`, otherwise `$XDG_CONFIG_HOME/herdr/config.toml`,
+otherwise `$HOME/.config/herdr/config.toml` (temporary `herdr/config.toml` if HOME is absent).
+The public API does not report the invoking client's live sort selection. Reading saved files is
+an internal-format workaround for a local client, not a guarantee for remote or divergent clients.
+
 ### 9.8 Notifications (useful for feedback from a TTY-less action)
 
 ```bash

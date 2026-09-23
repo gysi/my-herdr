@@ -20,7 +20,8 @@ way.
 
 | Action | What it does |
 |---|---|
-| `my-herdr.attention-next` | Go to the agent that needs you, or cycle through all agents when none does |
+| `my-herdr.attention-next` | Go to an urgent agent, otherwise move down the sidebar's agent list |
+| `my-herdr.attention-prev` | Move up the sidebar's agent list without urgency interruptions |
 | `my-herdr.fork-tab` | Fork the focused pane's Claude Code or Codex session into a new tab |
 | `my-herdr.fork-tab-ask` | The same, asking for the new tab's name first |
 | `my-herdr.pane-to-tab` | Move the focused pane, and the process in it, into a new tab |
@@ -32,22 +33,45 @@ Written in Python 3 (standard library only): no dependencies, no build step.
 
 One key to reach any agent. It reads `herdr agent list` and works from two orderings:
 
-- **A ring of every agent by position** — workspace, then tab, then pane. Repeated presses walk the
-  ring and wrap, so this one binding reaches every agent without a second one. The ring ignores
-  status, so it does not rearrange itself as agents work and finish.
+- **The local sidebar's agent order** — grouped follows workspace, tab, and pane layout order;
+  priority puts blocked, done, working, idle, and unknown agents in that order, with the newest
+  state change first within each status. Normal cycling moves to the row below the focused agent
+  and wraps from the bottom to the top.
 - **Urgency**, which decides when to leave the ring: `blocked` (waiting for input) before `done`
   (finished, nobody has looked yet), longest-waiting first.
 
 An agent that has *newly* started waiting cuts in and takes the next press. One that merely keeps
 waiting does not, so a permanently blocked agent can't trap the key and leave everyone else
-unreachable. One that stops waiting doesn't disturb the walk either, so you can answer an agent and
-carry on where you were. It works across workspaces and never targets the pane you pressed the key
-in.
+unreachable. Urgency uses the oldest waiting agent even when the sidebar sorts newest first.
+It works across workspaces and never targets the pane you pressed the key in.
 
 This differs from herdr's built-in `open_notification_target`, which jumps to whichever agent the
-*currently visible* toast belongs to: that needs toasts enabled and is gone once the toast is. It is
-also why the action is useful with `[ui.toast] delivery = "off"` — with sound left on, a sound tells
-you somebody needs you and this key takes you there, with nothing covering the screen.
+*currently visible* toast belongs to: that needs toasts enabled and is gone once the toast is.
+`attention-next` also works with `[ui.toast] delivery = "off"` — with sound left on, a sound tells
+you somebody needs you and the action takes you there.
+
+### `attention-prev`
+
+Move to the row above the focused agent, wrapping from the top to the bottom. This action always
+follows sidebar order, even when another agent newly needs attention. For a list `A → B → C → D`,
+previous from C selects B. It reverses list order, rather than retracing visited agents.
+
+Both actions start from the currently focused agent, including after mouse selection. From a
+non-agent pane, they use the last successful attention jump; without one, next starts at the top
+and previous at the bottom. They share `attention-next.json` in the plugin state directory and
+record the current waiting-agent snapshot after every successful jump. Priority order can change
+as agents work or finish, so the neighboring rows can change between presses.
+
+**Sidebar matching:** intended for one local client using herdr 0.9.1's standard grouped/priority
+view. Each press reads herdr's saved session-specific sidebar preference, falling back to
+`[ui] agent_panel_sort` in its config, then grouped order. The config fallback supports a quoted
+scalar under `[ui]` or a root `ui.agent_panel_sort` assignment; inline tables are not supported.
+Missing or unreadable files use the fallback, and malformed or unsupported sort values are logged.
+Changing the sidebar sort toggle takes effect on the next press.
+
+This relies on herdr's internal preference file format because its public API does not expose the
+client's current sort choice. Remote sidebars, clients with different settings, and custom
+agent-view overrides are not guaranteed to match. User configuration and preferences are only read.
 
 ### `fork-tab`
 
@@ -140,6 +164,12 @@ key = "prefix+<your-key>"          # or a direct chord: "ctrl+alt+<your-key>"
 type = "plugin_action"
 command = "my-herdr.attention-next"
 description = "next agent waiting"
+
+[[keys.command]]
+key = "prefix+<your-previous-key>"
+type = "plugin_action"
+command = "my-herdr.attention-prev"
+description = "previous agent in sidebar"
 ```
 
 `key` also accepts an array, so one action can have both a prefix binding and a direct one.

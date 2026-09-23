@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-09-24
+
+### Added
+
+- `my-herdr.attention-prev`: move up the local sidebar's agent list, wrapping and ignoring
+  urgency interruptions. Shares navigation state with `attention-next`.
+
+### Changed
+
+- Normal `attention-next` cycling follows the sidebar's grouped or priority order from the
+  currently focused agent. Its urgency-interruption behavior is unchanged.
+- Attention actions read the local session's saved sidebar sort preference on each invocation,
+  using herdr's client socket path and falling back to herdr configuration and then grouped order.
+  Exact matching is limited to a local client using the standard grouped/priority view.
+  Action logs include the selected sort mode for troubleshooting.
+
 ## [0.4.0] - 2026-09-23
 
 ### Added
@@ -71,7 +87,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Test harness: `unittest` suite with a fake `herdr` CLI and manifest
   validation, all run locally by `make check`.
 
-[Unreleased]: https://github.com/gysi/my-herdr/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/gysi/my-herdr/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/gysi/my-herdr/compare/v0.4.0...v0.5.1
 [0.4.0]: https://github.com/gysi/my-herdr/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/gysi/my-herdr/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/gysi/my-herdr/compare/v0.1.0...v0.2.0
