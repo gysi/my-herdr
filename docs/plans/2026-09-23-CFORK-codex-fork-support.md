@@ -1,5 +1,6 @@
 # Codex support for fork actions
 
+Slug: CFORK
 Status: Planned
 
 ## Problem and intended behavior
@@ -97,7 +98,7 @@ needed. Runtime code remains compatible with Python 3.9 and uses only the standa
 All automated tests use the mock herdr. Live tests and any linking, installing, or configuration
 changes require the user's approval and are performed one action at a time. Leave manual checks
 pending until performed. Do not stage, commit, or push; propose
-`feat: support Codex in fork actions` when the implementation is ready.
+`feat(CFORK): support Codex in fork actions` when the implementation is ready.
 
 ## Evidence and references
 

@@ -6,9 +6,9 @@ work; completed plans preserve the reasoning behind past development.
 
 ## Active plans
 
-| Plan | Status |
-|---|---|
-| [Codex support for fork actions](plans/2026-09-23-codex-fork-support.md) | Planned |
+| Slug | Plan | Status |
+|---|---|---|
+| `CFORK` | [Codex support for fork actions](plans/2026-09-23-CFORK-codex-fork-support.md) | Planned |
 
 ## Completed plans
 
@@ -25,13 +25,19 @@ work; completed plans preserve the reasoning behind past development.
 ## Plan conventions
 
 Create a plan for a substantial feature or a fix requiring investigation or design decisions.
-Small, straightforward fixes do not need one. Use `plans/YYYY-MM-DD-short-description.md`, with
-the creation date, and link it from this index. The initial development record is the naming
-exception.
+Small, straightforward fixes do not need one. Filenames have three parts: creation date, short
+slug, and descriptive name: `plans/YYYY-MM-DD-slug-descriptive-name.md`. For example,
+`2026-09-23-CFORK-codex-fork-support.md` uses the slug `CFORK`. Link each plan from this index.
+The initial development record is the naming exception and needs no slug.
+
+Choose a short, meaningful slug using uppercase letters and digits, starting with a letter. Keep
+hyphens in the descriptive name so the slug stays a single filename component. Slugs must be
+unique across all plans, including completed and dropped ones; keep them stable and never reuse
+them. Record the slug in the plan and its index entry.
 
 Each plan contains:
 
-- A descriptive title and status: **Planned**, **In progress**, **Completed**, or **Dropped**.
+- A descriptive title, `Slug: <slug>`, and status: **Planned**, **In progress**, **Completed**, or **Dropped**.
 - An optional GitHub issue link. Issues can host discussion and tracking, but the plan must be
   understandable without access to GitHub.
 - The problem and intended behavior, important design decisions, and an implementation and
@@ -46,6 +52,29 @@ keep the file at the same path. Preserve it as a historical design record rather
 for later releases. For abandoned work, mark it **Dropped**, explain why, and move its link to a
 Dropped plans section when one is needed. Neither completed nor dropped plans are current task
 queues.
+
+## Commit messages
+
+Use [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/). For work associated
+with a plan, use its uppercase slug as the scope in parentheses: `<type>(<slug>): <description>`. The type
+still describes the individual change, so several commits can reference the same plan:
+
+```text
+feat(CFORK): support Codex sessions
+fix(CFORK): restore focus after startup failure
+test(CFORK): cover named forks
+```
+
+This is the repository's convention for connecting plans to commits. Changes without a related
+plan omit the scope, for example `docs: fix installation example`; do not create a plan just to
+supply a scope. Use `feat` for features and `fix` for fixes, with types such as `docs`, `test`, and
+`refactor` for other changes. No plan-reference footer is needed.
+
+To find a plan's commits:
+
+```bash
+git log --fixed-strings --grep='(CFORK):'
+```
 
 ## Future ideas
 

@@ -104,7 +104,9 @@ Both of those files need their **executable bit** kept in git; the wrapper repor
 
 - **Never `git commit` or `git push`.** Stage nothing unless asked. When a change is ready, propose a
   commit message draft (Conventional Commits style, e.g. `feat: add pane-to-tab action`) and let the
-  user commit.
+  user commit. For work tied to a plan, use its uppercase slug as the scope, for example
+  `feat(CFORK): support Codex sessions`; omit the scope for unrelated changes. See the
+  [commit message convention](docs/README.md#commit-messages).
 - **Don't touch the user's herdr setup without asking.** That covers `~/.config/herdr/config.toml`
   (keybindings), `herdr plugin link/install/enable`, `herdr server reload-config`, and
   creating/closing/moving real tabs or panes. Unit tests must use the mock, never a live herdr.
