@@ -173,4 +173,5 @@ A failed action also sends a notification, which is invisible if you have `[ui.t
 
 ## For contributors / agents
 
-Start with [`AGENTS.md`](AGENTS.md).
+Start with [`AGENTS.md`](AGENTS.md). The [documentation index](docs/README.md) links to development
+plans, the initial development record, and research.

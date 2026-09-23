@@ -594,8 +594,10 @@ die() {
 ## 4. Recommendations for my-herdr (Bash + jq, no build)
 
 > **The design sketch this plugin started from, not a description of it.** `my-herdr` is built, in
-> **Python 3, standard library only**; the code, `AGENTS.md` and `docs/PLAN.md` are the source of
-> truth. The Bash below still names the planned ids (`fork-claude-tab`, `move-pane-new-tab`), which
+> **Python 3, standard library only**; the code, [README](../../README.md), and
+> [AGENTS.md](../../AGENTS.md) describe the current implementation and contributor rules. The
+> [documentation index](../README.md) links to active plans and the historical initial plan.
+> The Bash below still names the planned ids (`fork-claude-tab`, `move-pane-new-tab`), which
 > shipped as `fork-tab`, `fork-tab-ask` and `pane-to-tab`. What remains useful here is the survey of
 > patterns: the herdr call sequences, the helper ideas, and the pitfalls. The project has no CI and
 > no linter, so §4.8's workflow does not apply; its fake-herdr and manifest-check ideas were ported.
@@ -769,8 +771,9 @@ which `my-herdr` implements in `myherdr/fork.py`: `agent get` → require `agent
 `agent_session.kind == "id"` → `tab create --workspace --cwd` (cwd = `foreground_cwd // cwd`, and
 `--env CLAUDE_CONFIG_DIR=…` if set) → wait for the new shell → `agent start <tmp-name> --kind claude
 --pane <new> -- --resume <sid> --fork-session [-n <name>]` → `agent rename <new> --clear`, closing
-the tab if the start fails. Where `my-herdr` departs from them, and why, is in `docs/PLAN.md`
-(Phases 5 and 6): no invented `fork: …` label, the tab focused on creation, the saved conversation
+the tab if the start fails. The rationale is recorded in the
+[initial development plan](../plans/initial-development.md) (Phases 5 and 6): no invented
+`fork: …` label, the tab focused on creation, the saved conversation
 checked before any tab exists, and background Claude sessions refused (`official-docs.md` §7.4).
 
 **Asking for input first** (two-stage: action → popup). The action validates headless, so errors
@@ -790,7 +793,7 @@ rejects with `agent_blocked` while a dialog is open). `my-herdr` asks for a name
 
 ### 4.5 Keybindings (README section)
 
-`my-herdr` suggests no keys (maintainer decision, `docs/PLAN.md`); its README documents the
+`my-herdr` suggests no keys (see [AGENTS.md](../../AGENTS.md)); its README documents the
 `[[keys.command]]` mechanism with placeholder keys. Keybindings are client-side: reload them with the
 in-app reload (`prefix+shift+r`), not `herdr server reload-config` (`official-docs.md`).
 

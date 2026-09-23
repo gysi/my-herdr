@@ -1,8 +1,11 @@
-# my-herdr: implementation plan
+# my-herdr: initial development plan
 
-Working document for whoever implements the next piece, human or agent. Work top to bottom, tick
-boxes as you go, and add follow-ups at the end. Background: see `AGENTS.md` and `docs/research/`.
-It describes intent, not shipped behaviour: the README is what users should read.
+Status: Completed
+
+This is the historical record of the plugin's initial development, including its design decisions
+and completed checklists. It is not a queue of current work. The [README](../../README.md) and code
+describe current behavior; start with the [documentation index](../README.md) for active plans and
+research, and follow [AGENTS.md](../../AGENTS.md) when contributing.
 
 ## Goals
 
@@ -32,7 +35,7 @@ herdr pane run "$pane" "claude --resume $sid --fork-session -n $(printf %q "$nam
 It works (verified live). The plugin should improve on it using the research: `agent start` instead of
 `pane run` (waits for the shell and registers the agent), explicit workspace, and error toasts.
 Consider adding a `bin/cfork`-style CLI entry later so the shell workflow stays available (see
-Backlog).
+[Future ideas](../README.md#future-ideas)).
 
 ## Design decisions (made; change only with the maintainer)
 
@@ -415,16 +418,3 @@ Consequences worth remembering when releasing:
   `herdr plugin list --plugin my-herdr --json`, or just reinstall.
 - A linked checkout behaves differently: scripts are re-read on every invocation, so edits are live,
   and only a manifest change needs `herdr plugin link .` again.
-
-## Backlog / ideas
-
-- `fork-pane`: fork into a split pane instead of a tab (right/down variants).
-- Shell entry point (`bin/cfork` or `my-herdr fork <name> [prompt]`) so a `cfork`-style shell workflow can use the plugin code.
-- `pane-to-tab (ask)`: popup asks for the new tab's name.
-- `attention-pick`: popup listing every waiting agent (state icon, workspace/tab, title), pick with
-  `1`-`9`, then focus. Shares the popup machinery with `fork-tab-ask`. A popup does not take tiled
-  focus, so focusing from inside it sticks when it closes (seen with `fork-tab-ask`).
-- `attention-status`: sidebar/status line token or a `notification show` summary of how many agents
-  are blocked vs finished-unread.
-- `setup-keys` action that idempotently adds the suggested keybindings (marker-guarded), opt-in only.
-- Forking other agents (Codex has `resume`/fork equivalents).

@@ -10,7 +10,9 @@ is a separate plugin **action** that users bind to a key in their own herdr conf
 
 ## Read before writing code
 
-1. `docs/PLAN.md`: scope, design decisions, and the ordered task list. Pick up the first unchecked task.
+1. [docs/README.md](docs/README.md): documentation index and active plans. Read the plan relevant to
+   the requested task and work within its scope; do not pick unrelated unchecked tasks. Completed
+   plans are historical context, not a queue of work or a specification of current behavior.
 2. `docs/research/official-docs.md`: herdr plugin contract (manifest, env vars, popups,
    keybindings, CLI JSON shapes) for herdr 0.9.1. **Authoritative.**
 3. `docs/research/community-plugins.md`: how existing plugins are built, with recipes, a helper
@@ -74,7 +76,7 @@ myherdr/panes/<id>.py    one module per popup/pane entrypoint
 myherdr/cli.py           dispatcher: routes <action> / pane <entrypoint> to a module
 tests/                   test_*.py (unittest), support.py, mocks/herdr, fixtures/, check_manifest.py
 Makefile                 check / test / syntax / manifest / link / logs
-docs/                    PLAN.md, research/
+docs/                    README.md (index), plans/, research/
 ```
 
 **Adding an action** = `[[actions]]` block + `myherdr/actions/<id>.py` with `main(args)` + test +
@@ -107,13 +109,16 @@ Both of those files need their **executable bit** kept in git; the wrapper repor
   (keybindings), `herdr plugin link/install/enable`, `herdr server reload-config`, and
   creating/closing/moving real tabs or panes. Unit tests must use the mock, never a live herdr.
 - Manual smoke tests against the live herdr are done **with the user**, one action at a time.
-- Tick checkboxes in `docs/PLAN.md` as tasks complete; add discovered follow-ups there.
+- Tick checkboxes in the relevant active plan as tasks complete; add discovered follow-ups there.
+  Keep its status and the documentation index in sync. Use the plan conventions in
+  [docs/README.md](docs/README.md); small, straightforward fixes do not require a plan.
 - **Documents state what is true now, not how it got there.** When a decision changes, rewrite the
   entry so it reads as if it had always said that, and delete what it replaced. Don't add "changed
-  from X", "previously Y", "note: this used to be Z", or a revision log to `PLAN.md`, `README.md`,
+  from X", "previously Y", "note: this used to be Z", or a revision log to active plans, `README.md`,
   `AGENTS.md` or the research notes. Git already holds the history; a second copy in prose only goes
-  stale and contradicts the lines around it. `CHANGELOG.md` is the one exception, and it records
-  user-visible releases, not the path the implementation took.
+  stale and contradicts the lines around it. Completed plans in `docs/plans/` are an exception:
+  preserve them as historical design records instead of rewriting them for later features.
+  `CHANGELOG.md` records user-visible releases, not the path the implementation took.
 - Bump `version` in `herdr-plugin.toml` and add a `CHANGELOG.md` entry for every user-visible change.
 - The repo is **public** (github.com/gysi/my-herdr). Never commit secrets, session ids, or personal
   paths in examples. Use placeholders.
