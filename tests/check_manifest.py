@@ -29,8 +29,11 @@ PLACEMENTS = {"overlay", "popup", "split", "tab", "zoomed"}
 
 REQUIRED = ("id", "name", "version", "min_herdr_version")
 
-#: manifest section -> package directory holding one module per id
-MODULE_DIRS = {"actions": "actions", "panes": "panes"}
+# Also support running this file directly, without installing the package.
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
+
+from myherdr.entrypoints import ENTRYPOINTS  # noqa: E402
 
 
 def check(manifest, root=ROOT):
@@ -88,6 +91,15 @@ def check(manifest, root=ROOT):
             continue
         problems.extend(check_section(section, entries, root))
 
+    for section, routes in ENTRYPOINTS.items():
+        entries = manifest.get(section, [])
+        if not isinstance(entries, list):
+            continue  # Already reported by the section validation above.
+        declared = {entry.get("id") for entry in entries
+                    if isinstance(entry, dict) and isinstance(entry.get("id"), str)}
+        for entry_id in sorted(set(routes) - declared):
+            problems.append("registered %s %r is not declared in the manifest"
+                            % (section[:-1], entry_id))
     problems.extend(check_link_handlers(manifest))
     return problems
 
@@ -176,21 +188,24 @@ def check_module(section, entry_id, entry, root):
 
     Args:
         section (str): Manifest section; only actions and panes have modules.
-        entry_id (str): Validated local ID, with dashes mapped to module underscores.
+        entry_id (str): Validated public ID to look up in the registry.
         entry (dict): Declaration whose command must mention its own ID.
         root (str): Plugin checkout directory to inspect.
 
     Returns:
         list[str]: Routing diagnostics; empty for valid or non-module sections.
     """
-    directory = MODULE_DIRS.get(section)
-    if directory is None:
+    routes = ENTRYPOINTS.get(section)
+    if routes is None:
         return []
+    target = routes.get(entry_id)
+    if target is None:
+        return ["%s %r: no entrypoint registered" % (section[:-1], entry_id)]
 
-    module = entry_id.replace("-", "_") + ".py"
-    path = os.path.join(root, "myherdr", directory, module)
-    if not os.path.exists(path):
-        return ["%s %r: expected myherdr/%s/%s" % (section[:-1], entry_id, directory, module)]
+    path = os.path.join(root, *target.split(".")) + ".py"
+    if not os.path.isfile(path):
+        return ["%s %r: registered module %s is missing"
+                % (section[:-1], entry_id, target)]
 
     # The dispatcher picks the module from the argument, not from the id, so a
     # mismatch would run the wrong code.

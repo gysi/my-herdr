@@ -15,4 +15,4 @@ ignore-var-parameters = false
 
 [lint.per-file-ignores]
 # unittest method names describe each check; helper Args sections still get D417.
-"tests/test_*.py" = ["D102"]
+"tests/**/test_*.py" = ["D102"]

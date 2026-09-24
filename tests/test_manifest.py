@@ -3,16 +3,17 @@ import os
 import shutil
 import tempfile
 import unittest
+from unittest import mock
 
-import support
+from tests import support
 
-import check_manifest
+from tests import check_manifest
 
 HAS_TOMLLIB = check_manifest.tomllib is not None
 
 
 def manifest(**overrides):
-    """Build a minimal valid manifest for validation tests.
+    """Build a valid manifest covering all registered entrypoints for tests.
 
     Args:
         **overrides: Top-level manifest fields to replace, including invalid values.
@@ -26,12 +27,14 @@ def manifest(**overrides):
         "version": "0.1.0",
         "min_herdr_version": "0.9.1",
         "platforms": ["linux", "macos"],
-        "actions": [{
-            "id": "ping",
-            "title": "my-herdr: ping",
-            "command": ["python3", "bin/my-herdr", "ping"],
-        }],
     }
+    for section, routes in check_manifest.ENTRYPOINTS.items():
+        base[section] = [
+            {"id": entry_id, "title": "my-herdr: " + entry_id,
+             "command": ["python3", "bin/my-herdr"]
+             + (["pane"] if section == "panes" else []) + [entry_id]}
+            for entry_id in routes
+        ]
     base.update(overrides)
     return base
 
@@ -106,7 +109,7 @@ class ActionTest(unittest.TestCase):
         problems = check_manifest.check(manifest(actions=[
             {"id": "not-built-yet", "title": "t",
              "command": ["python3", "bin/my-herdr", "not-built-yet"]}]))
-        self.assertTrue(any("myherdr/actions/not_built_yet.py" in p for p in problems))
+        self.assertTrue(any("no entrypoint registered" in p for p in problems))
 
     def test_command_that_routes_elsewhere_is_reported(self):
         # Copy-pasting a block and forgetting to change the argument would
@@ -122,10 +125,11 @@ class PaneTest(unittest.TestCase):
     def setUp(self):
         self.root = tempfile.mkdtemp(prefix="my-herdr-manifest-")
         self.addCleanup(shutil.rmtree, self.root, True)
-        for package in ("actions", "panes"):
-            directory = os.path.join(self.root, "myherdr", package)
-            os.makedirs(directory)
-            open(os.path.join(directory, "ping.py"), "w").close()
+        for routes in check_manifest.ENTRYPOINTS.values():
+            for target in routes.values():
+                path = os.path.join(self.root, *target.split(".")) + ".py"
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                open(path, "w").close()
 
     def check(self, entry_overrides):
         """Validate a pane entry against the temporary plugin directory.
@@ -136,7 +140,8 @@ class PaneTest(unittest.TestCase):
         Returns:
             List of validation messages; empty when the manifest is valid.
         """
-        entry = {"id": "ping", "title": "t", "command": ["python3", "bin/my-herdr", "pane", "ping"]}
+        entry = {"id": "fork-prompt", "title": "t",
+                 "command": ["python3", "bin/my-herdr", "pane", "fork-prompt"]}
         entry.update(entry_overrides)
         return check_manifest.check(manifest(panes=[entry]), root=self.root)
 
@@ -155,11 +160,40 @@ class PaneTest(unittest.TestCase):
     def test_unknown_placement_is_rejected(self):
         self.assertTrue(self.check({"placement": "floating"}))
 
-    def test_panes_resolve_against_the_panes_package(self):
+    def test_unregistered_pane_is_reported(self):
         problems = check_manifest.check(manifest(panes=[
             {"id": "no-such-prompt", "title": "t",
              "command": ["python3", "bin/my-herdr", "pane", "no-such-prompt"]}]))
-        self.assertTrue(any("myherdr/panes/no_such_prompt.py" in p for p in problems))
+        self.assertTrue(any("no entrypoint registered" in p for p in problems))
+
+
+class RegistryTest(unittest.TestCase):
+    def test_registered_entries_must_be_declared_in_manifest(self):
+        for section in ("actions", "panes"):
+            with self.subTest(section=section):
+                broken = manifest()
+                missing = broken[section].pop()["id"]
+                problems = check_manifest.check(broken)
+                self.assertTrue(any(missing in p and "not declared" in p for p in problems))
+
+    def test_registered_target_module_must_exist(self):
+        with mock.patch.dict(check_manifest.ENTRYPOINTS["actions"],
+                             {"ping": "myherdr.diagnostics.not_built"}):
+            problems = check_manifest.check(manifest())
+        self.assertTrue(any("registered module myherdr.diagnostics.not_built is missing" in p
+                            for p in problems))
+
+    def test_declared_entry_must_be_registered(self):
+        declared = manifest()
+        routes = dict(check_manifest.ENTRYPOINTS["actions"])
+        del routes["ping"]
+        with mock.patch.dict(check_manifest.ENTRYPOINTS, {"actions": routes}):
+            problems = check_manifest.check(declared)
+        self.assertTrue(any("'ping': no entrypoint registered" in p for p in problems))
+
+    def test_non_array_sections_report_validation_error(self):
+        problems = check_manifest.check(manifest(panes=None))
+        self.assertIn("panes must be an array of tables", problems)
 
 
 class LinkHandlerTest(unittest.TestCase):

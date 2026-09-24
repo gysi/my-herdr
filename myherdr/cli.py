@@ -1,8 +1,8 @@
 """Dispatcher: maps `my-herdr <action>` / `my-herdr pane <entrypoint>` to a module.
 
-Every action is `myherdr/actions/<id>.py` with a `main(args)`; every pane
-entrypoint is `myherdr/panes/<id>.py` with the same shape. Adding one means
-adding a module and an `[[actions]]` block, nothing here.
+The entrypoint registry maps public IDs to feature modules with main(args).
+Only the selected module is imported. Adding an entrypoint requires its feature
+module, registry entry, and matching manifest declaration.
 
 This is also where MyHerdrError stops. How it is reported depends on where the
 code runs: a headless action has no TTY and its output only reaches
@@ -10,19 +10,18 @@ code runs: a headless action has no TTY and its output only reaches
 must not vanish before they read the message.
 """
 import importlib
-import os
 import re
 import sys
 
-from . import herdr
-from .context import Context
-from .errors import MyHerdrError
+from .entrypoints import ENTRYPOINTS
+from .shared import herdr
+from .shared.context import Context
+from .shared.errors import MyHerdrError
 
 USAGE = """usage: my-herdr <action> [args...]
        my-herdr pane <entrypoint> [args...]"""
 
-#: Same charset herdr allows for action and pane ids (no dots), so a manifest
-#: id maps to exactly one module and nothing else can be imported.
+#: Public IDs contain no dots. The registry is the allowlist of import targets.
 ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 
 EXIT_OK = 0
@@ -43,7 +42,7 @@ def main(argv):
             2 for invalid usage, or 130 for an interrupted headless action.
 
     Raises:
-        ImportError: A routed module has a broken internal import.
+        ImportError: A registered module or one of its dependencies cannot be imported.
     """
     if not argv or argv[0] in ("-h", "--help", "help"):
         print(USAGE)
@@ -64,8 +63,8 @@ def dispatch(kind, name, args, interactive):
     """Import an entrypoint, run it, and report expected failures.
 
     Args:
-        kind (str): Package containing the entrypoint: "actions" or "panes".
-        name (str): Manifest ID; dashes are translated to module underscores.
+        kind (str): Registry section for the entrypoint: "actions" or "panes".
+        name (str): Public manifest ID to look up in the entrypoint registry.
         args (list[str]): Remaining command-line arguments for the entrypoint.
         interactive (bool): True to keep popup errors readable until Enter;
             False to toast failures from headless actions.
@@ -74,21 +73,19 @@ def dispatch(kind, name, args, interactive):
         int: Entrypoint exit status or the dispatcher's failure/cancellation code.
 
     Raises:
-        ImportError: The module exists but one of its internal imports fails.
+        ImportError: A registered module or one of its dependencies cannot be imported.
     """
     if not ID_RE.match(name):
         return usage_error("invalid %s id: %r" % (kind[:-1], name))
 
-    try:
-        module = importlib.import_module("myherdr.%s.%s" % (kind, name.replace("-", "_")))
-    except ImportError as exc:
-        # An ImportError from inside the module itself is a real bug and must
-        # not be reported as "unknown action".
-        if getattr(exc, "name", None) != "myherdr.%s.%s" % (kind, name.replace("-", "_")):
-            raise
+    target = ENTRYPOINTS.get(kind, {}).get(name)
+    if target is None:
         return usage_error(
             "unknown %s %r (available: %s)"
             % (kind[:-1], name, ", ".join(available(kind)) or "none"))
+
+    # A registered module that cannot import is a bug, not an unknown action.
+    module = importlib.import_module(target)
 
     try:
         return module.main(args) or EXIT_OK
@@ -141,22 +138,13 @@ def usage_error(message):
 
 
 def available(kind):
-    """List entrypoint modules as manifest IDs.
+    """List registered action or pane IDs without importing their modules.
 
     Args:
-        kind (str): Package directory to inspect, normally "actions" or "panes".
+        kind (str): Registry section, "actions" or "panes". Unknown sections
+            produce an empty list.
 
     Returns:
-        list[str]: Sorted IDs with underscores replaced by dashes, excluding
-            private modules; empty if the directory cannot be read.
+        list[str]: Sorted public IDs from the requested registry section.
     """
-    directory = os.path.join(os.path.dirname(os.path.abspath(__file__)), kind)
-    try:
-        names = os.listdir(directory)
-    except OSError:
-        return []
-    return sorted(
-        n[:-3].replace("_", "-")
-        for n in names
-        if n.endswith(".py") and not n.startswith("_")
-    )
+    return sorted(ENTRYPOINTS.get(kind, {}))

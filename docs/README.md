@@ -29,12 +29,33 @@ private helpers, return values, errors, and the accuracy of the descriptions. Ru
 or rewrite files during checks. See [Ruff's D417 rule](https://docs.astral.sh/ruff/rules/undocumented-param/)
 for its parameter-checking limits.
 
+## Code organization
+
+`myherdr/attention`, `forking`, `pane_to_tab`, and `diagnostics` each own their entrypoints
+and implementation. Common herdr access, invocation context, and errors live in `shared`.
+`cli.py` handles dispatch and error reporting; `entrypoints.py` maps public action/pane IDs
+to feature modules without importing them. The manifest checker validates those mappings.
+
+Features may import their own modules and `shared`. Shared code must not import features,
+and features must not import the dispatcher or each other. Keep `__init__.py` files minimal.
+Add shared abstractions for concrete reuse, and keep small features in one implementation file.
+The terminal line editor belongs to forking; common herdr operations belong to the CLI wrapper.
+
+Tests mirror feature ownership. Common fixtures, the mock CLI, and `tests/support.py` stay
+central. Run all tests with `python3 -m unittest discover -s tests -t .`, or a feature with
+`python3 -m unittest discover -s tests/attention -t .`. Package imports use `tests.*` so
+feature test directories cannot shadow runtime packages.
+
+See [AGENTS.md](../AGENTS.md#layout) for the layout and entrypoint-adding checklist.
+
 ## Active plans
 
 None.
 
 ## Completed plans
 
+- `MOD`: [Feature packages](plans/2026-09-24-MOD-feature-packages.md).
+  Feature packages and grouped tests are complete; all 283 tests and local checks passed.
 - `ATTN`: [Sidebar attention navigation](plans/2026-09-24-ATTN-sidebar-attention-navigation.md).
   All 265 automated tests passed; the user confirmed navigation in grouped and priority views.
 - `CFORK`: [Codex support for fork actions](plans/2026-09-23-CFORK-codex-fork-support.md).

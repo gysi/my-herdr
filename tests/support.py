@@ -1,7 +1,7 @@
 """Shared test helpers.
 
-Importing this puts the plugin root on sys.path, because `unittest discover -s
-tests` only adds `tests/` itself. Every test module imports it first.
+Tests import this module through the tests package. Run discovery with
+`python3 -m unittest discover -s tests -t .` so package imports are unambiguous.
 """
 import json
 import os
@@ -21,12 +21,8 @@ DISPATCHER = os.path.join(ROOT, "bin", "my-herdr")
 #: runs the suite. Unit tests put it in the environment they patch in.
 NO_HOME = os.path.join(TESTS, "no-such-home")
 
-if ROOT not in sys.path:
-    sys.path.insert(0, ROOT)
-
-
 def completed(stdout="", stderr="", returncode=0):
-    """Build a process result for mocking myherdr.herdr.run().
+    """Build a process result for mocking myherdr.shared.herdr.run().
 
     Args:
         stdout (str): Captured standard output, empty by default.
@@ -68,7 +64,7 @@ def failure(code, message="boom"):
 
 
 class Recorder(object):
-    """Replacement for myherdr.herdr.run that records argv and replays answers.
+    """Replacement for myherdr.shared.herdr.run that records argv and replays answers.
 
     Answers are consumed in order; when they run out the last one repeats, so a
     test that only cares about the first call stays short.

@@ -35,7 +35,7 @@ If the research and the live `herdr` CLI disagree, trust the CLI, then update th
   `min_herdr_version` above the running herdr is a hard load failure, so raise it only when the
   target moves.
 - Linux first; don't break macOS on purpose.
-- Every herdr call goes through the wrapper in `myherdr/herdr.py` (`run()` / `run_json()`), which
+- Every herdr call goes through the wrapper in `myherdr/shared/herdr.py` (`run()` / `run_json()`), which
   uses `HERDR_BIN_PATH` and argv lists, so tests can mock it and nothing needs shell quoting.
 - Use **Google-style docstrings** for functions you add or change: a short summary, an `Args:`
   entry for every parameter except `self`/`cls`, and `Returns:` / `Raises:` where applicable.
@@ -57,7 +57,7 @@ If the research and the live `herdr` CLI disagree, trust the CLI, then update th
   (`ui_busy`). A popup stays on screen until its process exits, so it must not do slow work itself.
 - **Actions take no parameters.** `plugin action invoke` has no way to pass any, and the socket API's
   invocation `context` has fixed fields. To hand data to an action, write it to a file in
-  `$HERDR_PLUGIN_STATE_DIR` first (see `myherdr/fork_request.py`: atomic, claimed once, expires).
+  `$HERDR_PLUGIN_STATE_DIR` first (see `myherdr/forking/request.py`: atomic, claimed once, expires).
   Don't start plugin work as a detached process instead: herdr would not log it or see it.
 - In pane commands, reference scripts via `$HERDR_PLUGIN_ROOT`, not relative paths.
 - Manifest commands are **argv arrays, no shell**. Action/pane ids must not contain dots.
@@ -82,27 +82,32 @@ If the research and the live `herdr` CLI disagree, trust the CLI, then update th
 ## Layout
 
 ```
-herdr-plugin.toml        manifest
+herdr-plugin.toml        manifest with public action/pane IDs
 bin/my-herdr             executable dispatcher (#!/usr/bin/env python3)
-myherdr/herdr.py         herdr CLI wrapper: run(), run_json(), notify(), focused_pane(), …
-myherdr/context.py       env + HERDR_PLUGIN_CONTEXT_JSON
-myherdr/errors.py        MyHerdrError
-myherdr/fork.py          the fork routine shared by fork-tab and fork-tab-ask
-myherdr/fork_agents.py   agent-specific validation, launch arguments, and environment forwarding
-myherdr/fork_request.py  one-shot hand-off of a tab name from the popup to fork-tab
-myherdr/prompt.py        one-line editor for popups (Esc cancels, which input() cannot see)
-myherdr/actions/<id>.py  one module per action, each with main(args)
-myherdr/panes/<id>.py    one module per popup/pane entrypoint
-myherdr/cli.py           dispatcher: routes <action> / pane <entrypoint> to a module
-tests/                   test_*.py (unittest), support.py, mocks/herdr, fixtures/, check_manifest.py
+myherdr/cli.py           dispatch, help, and consistent error reporting
+myherdr/entrypoints.py   public action/pane IDs -> lazily imported feature modules
+myherdr/shared/          herdr CLI wrapper, invocation context, and common errors
+myherdr/attention/       next/previous entrypoints, navigation, and sidebar ordering
+myherdr/forking/         tab/tab_ask entrypoints, workflow, agents, request, popup, line editor
+myherdr/pane_to_tab/     move-to-tab action
+myherdr/diagnostics/     ping action
+tests/                  feature/shared packages, dispatcher/registry/manifest tests
+tests/support.py        common mock helpers
+tests/mocks/herdr       executable mock CLI; fixtures/ holds JSON responses
+tests/check_manifest.py offline manifest/registry agreement and module validation
 mise.toml                pinned development tools (Ruff)
 ruff.toml                local Python and docstring lint rules
 Makefile                 check / lint / test / syntax / manifest / link / logs
 docs/                    README.md (index), plans/, research/
 ```
 
-**Adding an action** = `[[actions]]` block + `myherdr/actions/<id>.py` with `main(args)` + test +
-README row. `tests/check_manifest.py` fails if the block and the module disagree.
+Features import their own modules and `shared`, never another feature or the dispatcher.
+Shared modules do not depend on features. Keep package `__init__.py` files free of eager
+feature imports. Feature-specific helpers stay with their feature until reuse is needed.
+
+**Adding an action** = feature module with `main(args)` + `entrypoints.py` registry entry +
+`[[actions]]` block + feature test + README row. Pane entrypoints use the `panes` registry and
+`[[panes]]`. `tests/check_manifest.py` checks agreement in both directions and module existence.
 
 ## Commands
 
@@ -111,8 +116,8 @@ mise trust                                 # once, after reviewing mise.toml
 mise install                               # install the pinned development tools
 make check                                 # lint + syntax + manifest + tests: before every commit
 make lint                                  # Ruff through mise; no source rewrites
-make test                                  # python3 -m unittest discover -s tests
-python3 -m unittest discover -s tests -v   # same, verbose
+make test                                  # python3 -m unittest discover -s tests -t .
+python3 -m unittest discover -s tests -t . -v   # same, verbose
 python3 tests/check_manifest.py            # offline manifest validation
 herdr plugin link .                        # authoritative manifest validation + local install
 herdr plugin action invoke my-herdr.<action>
@@ -124,6 +129,17 @@ extension, so `compileall` skips them even when named explicitly.
 
 Both of those files need their **executable bit** kept in git; the wrapper reports a non-executable
 `HERDR_BIN_PATH` as an error, but the tests spawn them directly.
+
+## File Editing Preference
+
+- Use dedicated file-editing tools (such as `apply_patch` or the IDE editing
+  tools) to create or modify files.
+- Do not use Python commands/scripts, shell redirection, or other scripting
+  workarounds for file edits unless the user explicitly requests or approves
+  that approach.
+- For bulk edits or very large files, Python may be appropriate. Explain why
+  it would help and obtain the user's approval before using it, unless that
+  approval has already been given for the task.
 
 ## Working rules
 

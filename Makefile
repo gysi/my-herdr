@@ -13,7 +13,7 @@ lint:
 
 ## unit + end-to-end tests (end-to-end run bin/my-herdr against tests/mocks/herdr)
 test:
-	$(PYTHON) -m unittest discover -s tests
+	$(PYTHON) -m unittest discover -s tests -t .
 
 ## syntax gate. compileall only looks at *.py, so the extensionless entry
 ## point and the fake herdr CLI need py_compile by name.

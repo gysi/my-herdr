@@ -4,10 +4,9 @@ import sys
 import unittest
 from unittest import mock
 
-import support  # noqa: F401  (puts the plugin root on sys.path)
-
-from myherdr import cli, herdr
-from myherdr.errors import MyHerdrError
+from myherdr import cli
+from myherdr.shared import herdr
+from myherdr.shared.errors import MyHerdrError
 
 
 class CapturedStreams(object):
@@ -39,7 +38,7 @@ class RoutingTest(unittest.TestCase):
         with mock.patch("importlib.import_module", return_value=module) as imported:
             with CapturedStreams():
                 self.assertEqual(cli.main(["ping", "--extra"]), 0)
-        imported.assert_called_once_with("myherdr.actions.ping")
+        imported.assert_called_once_with("myherdr.diagnostics.ping")
         module.main.assert_called_once_with(["--extra"])
 
     def test_routes_a_pane_entrypoint(self):
@@ -47,16 +46,15 @@ class RoutingTest(unittest.TestCase):
         with mock.patch("importlib.import_module", return_value=module) as imported:
             with CapturedStreams():
                 cli.main(["pane", "fork-prompt"])
-        imported.assert_called_once_with("myherdr.panes.fork_prompt")
+        imported.assert_called_once_with("myherdr.forking.popup")
 
-    def test_dashes_in_ids_map_to_underscores_in_modules(self):
-        # Manifest ids may not contain dots and conventionally use dashes;
-        # module names cannot.
+    def test_public_id_routes_to_its_feature_module(self):
+        # The public ID is independent of the implementation module name.
         module = mock.Mock(main=mock.Mock(return_value=0))
         with mock.patch("importlib.import_module", return_value=module) as imported:
             with CapturedStreams():
                 cli.main(["attention-next"])
-        imported.assert_called_once_with("myherdr.actions.attention_next")
+        imported.assert_called_once_with("myherdr.attention.next")
 
     def test_a_module_returning_none_still_exits_zero(self):
         module = mock.Mock(main=mock.Mock(return_value=None))
@@ -108,6 +106,19 @@ class RoutingTest(unittest.TestCase):
             with self.assertRaises(ImportError):
                 cli.main(["ping"])
 
+    def test_unknown_entrypoints_do_not_attempt_import(self):
+        for argv in (["nope"], ["pane", "nope"], ["pane", "ping"], ["fork-prompt"]):
+            with self.subTest(argv=argv), mock.patch("importlib.import_module") as imported:
+                with CapturedStreams():
+                    self.assertEqual(cli.main(argv), cli.EXIT_USAGE)
+                imported.assert_not_called()
+
+    def test_missing_registered_module_is_not_hidden(self):
+        with mock.patch("importlib.import_module", side_effect=ModuleNotFoundError(
+                "missing registered target", name="myherdr.diagnostics.ping")):
+            with self.assertRaises(ModuleNotFoundError):
+                cli.main(["ping"])
+
 
 class ErrorReportingTest(unittest.TestCase):
     def failing_module(self, message="it broke"):
@@ -151,7 +162,7 @@ class ErrorReportingTest(unittest.TestCase):
             with mock.patch.object(herdr, "notify") as notify:
                 with mock.patch.object(sys, "stdin", io.StringIO("\n")) as stdin:
                     with CapturedStreams() as streams:
-                        self.assertEqual(cli.main(["pane", "prompt"]), cli.EXIT_ERROR)
+                        self.assertEqual(cli.main(["pane", "fork-prompt"]), cli.EXIT_ERROR)
         notify.assert_not_called()
         self.assertIn("press Enter", streams.err.getvalue())
         self.assertEqual(stdin.read(), "", "must consume the keypress")
@@ -171,7 +182,7 @@ class ErrorReportingTest(unittest.TestCase):
 
         with mock.patch("importlib.import_module", return_value=mock.Mock(main=cancel)):
             with CapturedStreams():
-                self.assertEqual(cli.main(["pane", "prompt"]), cli.EXIT_OK)
+                self.assertEqual(cli.main(["pane", "fork-prompt"]), cli.EXIT_OK)
 
     def test_interrupting_an_action_reports_the_signal(self):
         def cancel(args):
@@ -191,11 +202,11 @@ class ErrorReportingTest(unittest.TestCase):
 
 
 class AvailableTest(unittest.TestCase):
-    def test_lists_real_modules_as_manifest_ids(self):
+    def test_lists_registered_manifest_ids(self):
         self.assertIn("ping", cli.available("actions"))
         self.assertNotIn("__init__", cli.available("actions"))
 
-    def test_missing_directory_is_empty(self):
+    def test_unknown_registry_section_is_empty(self):
         self.assertEqual(cli.available("nothing-here"), [])
 
 
