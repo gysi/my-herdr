@@ -181,21 +181,20 @@ class WalkTest(unittest.TestCase):
             target = attention_next.choose(self.agents, here, cursor)
             seen.append(target["pane_id"])
             here = target["pane_id"]
-            cursor = {"pane_id": here, "waiting": attention_next.waiting_states(self.agents)}
+            cursor = {"pane_id": here, "visited": {}}
         self.assertEqual(seen, ["w1:p2", "w1:p3", "w1:p1", "w1:p2", "w1:p3", "w1:p1"])
 
     def test_a_blocked_agent_does_not_trap_the_walk(self):
-        # One blocked agent and two finished ones, the live setup that exposed
-        # the bug: the walk must still reach all three.
+        # A visited blocker must still allow the walk to reach all three.
         agents = attention_next.ring(
             listing(agent("w1:p1", "blocked", seq=9), agent("w1:p2"), agent("w1:p3")))
-        waiting = attention_next.waiting_states(agents)
-        here, cursor, seen = "w1:p1", {"pane_id": "w1:p1", "waiting": waiting}, []
+        visited = {"w1:p1": ["blocked", 9]}
+        here, cursor, seen = "w1:p1", {"pane_id": "w1:p1", "visited": visited}, []
         for _ in range(4):
             target = attention_next.choose(agents, here, cursor)
             seen.append(target["pane_id"])
             here = target["pane_id"]
-            cursor = {"pane_id": here, "waiting": waiting}
+            cursor = {"pane_id": here, "visited": visited}
         self.assertEqual(seen, ["w1:p2", "w1:p3", "w1:p1", "w1:p2"])
 
     def test_a_vanished_anchor_restarts_the_walk(self):
@@ -221,7 +220,7 @@ class WalkTest(unittest.TestCase):
         # key reach an idle agent while p3 keeps waiting.
         agents = attention_next.ring(
             listing(agent("w1:p1"), agent("w1:p2"), agent("w1:p3", "blocked", seq=4)))
-        cursor = {"pane_id": "w1:p3", "waiting": {"w1:p3": ["blocked", 4]}}
+        cursor = {"pane_id": "w1:p3", "visited": {"w1:p3": ["blocked", 4]}}
         self.assertEqual(self.choose("w1:p3", cursor, agents), "w1:p1")
 
     def test_same_pane_with_a_new_waiting_episode_interrupts(self):
@@ -230,14 +229,14 @@ class WalkTest(unittest.TestCase):
             with self.subTest(before=before, after=after):
                 agents = attention_next.ring(listing(
                     agent("w1:p1"), agent("w1:p2"), agent("w1:p3", after, seq=20)))
-                cursor = {"pane_id": "w1:p3", "waiting": {"w1:p3": [before, 10]}}
+                cursor = {"pane_id": "w1:p3", "visited": {"w1:p3": [before, 10]}}
                 # Manual focus on p1; the intervening work was never polled.
                 self.assertEqual(self.choose("w1:p1", cursor, agents), "w1:p3")
 
     def test_status_change_with_same_sequence_interrupts(self):
         agents = attention_next.ring(listing(
             agent("w1:p1"), agent("w1:p2"), agent("w1:p3", "done", seq=10)))
-        cursor = {"pane_id": "w1:p3", "waiting": {"w1:p3": ["blocked", 10]}}
+        cursor = {"pane_id": "w1:p3", "visited": {"w1:p3": ["blocked", 10]}}
         self.assertEqual(self.choose("w1:p1", cursor, agents), "w1:p3")
 
     def test_unchanged_waiting_elsewhere_does_not_interrupt(self):
@@ -245,15 +244,15 @@ class WalkTest(unittest.TestCase):
             with self.subTest(status=status):
                 agents = attention_next.ring(listing(
                     agent("w1:p1"), agent("w1:p2"), agent("w1:p3", status, seq=10)))
-                cursor = {"pane_id": "w1:p3", "waiting": {"w1:p3": [status, 10]}}
+                cursor = {"pane_id": "w1:p3", "visited": {"w1:p3": [status, 10]}}
                 self.assertEqual(self.choose("w1:p1", cursor, agents), "w1:p2")
 
-    def test_new_episode_preserves_blocked_before_done_priority(self):
+    def test_visited_blocker_cannot_displace_new_done_episode(self):
         agents = attention_next.ring(listing(
             agent("w1:p1"), agent("w1:p2", "blocked", seq=5),
             agent("w1:p3", "done", seq=20)))
-        cursor = {"waiting": {"w1:p2": ["blocked", 5], "w1:p3": ["done", 10]}}
-        self.assertEqual(self.choose("w1:p1", cursor, agents), "w1:p2")
+        cursor = {"visited": {"w1:p2": ["blocked", 5], "w1:p3": ["done", 10]}}
+        self.assertEqual(self.choose("w1:p1", cursor, agents), "w1:p3")
 
     def test_an_agent_that_stops_waiting_does_not_restart_the_walk(self):
         # You answered p3 and carried on; the walk keeps its place.
@@ -281,10 +280,10 @@ class CursorFileTest(unittest.TestCase):
         self.path = os.path.join(self.tmp, "cursor.json")
 
     def test_round_trip(self):
-        agents = [agent("w1:p1", "blocked"), agent("w1:p2")]
-        attention_next.write_cursor(self.path, "w1:p2", agents)
+        attention_next.write_cursor(self.path, "w1:p2", {"w1:p1": ["blocked", 0]})
         self.assertEqual(attention_next.read_cursor(self.path),
-                         {"pane_id": "w1:p2", "waiting": {"w1:p1": ["blocked", 0]}})
+                         {"version": 2, "pane_id": "w1:p2",
+                          "visited": {"w1:p1": ["blocked", 0]}})
 
     def test_a_missing_or_broken_cursor_is_not_an_error(self):
         self.assertEqual(attention_next.read_cursor(self.path), {})
@@ -294,34 +293,53 @@ class CursorFileTest(unittest.TestCase):
             self.assertEqual(attention_next.read_cursor(self.path), {})
 
     def test_legacy_cursor_keeps_anchor_and_reconsiders_waiting(self):
-        with open(self.path, "w") as handle:
-            json.dump({"pane_id": "w1:p2", "waiting": ["w1:p3"]}, handle)
-        cursor = attention_next.read_cursor(self.path)
-        self.assertEqual(cursor, {"pane_id": "w1:p2", "waiting": {}})
         agents = [agent("w1:p1"), agent("w1:p2"), agent("w1:p3", "done", seq=20)]
-        self.assertEqual(attention_next.choose(agents, "w1:p1", cursor)["pane_id"], "w1:p3")
-        attention_next.write_cursor(self.path, "w1:p3", agents)
+        for waiting in (["w1:p3"], {"w1:p3": ["done", 20]}):
+            with open(self.path, "w") as handle:
+                json.dump({"pane_id": "w1:p2", "waiting": waiting}, handle)
+            cursor = attention_next.read_cursor(self.path)
+            self.assertEqual(cursor, {"version": 2, "pane_id": "w1:p2", "visited": {}})
+            self.assertEqual(attention_next.choose(agents, "w1:p1", cursor)["pane_id"], "w1:p3")
+        attention_next.write_cursor(self.path, "w1:p3", {"w1:p3": ["done", 20]})
         cursor = attention_next.read_cursor(self.path)
         self.assertEqual(attention_next.choose(agents, "w1:p1", cursor)["pane_id"], "w1:p2")
 
-    def test_malformed_waiting_entries_are_discarded(self):
+    def test_malformed_visited_entries_are_discarded(self):
         for state in (None, [], ["done"], ["done", 1, 2], ["idle", 1],
                       ["done", "1"], ["done", True], [{}, 1], "done"):
             with self.subTest(state=state):
                 with open(self.path, "w") as handle:
-                    json.dump({"pane_id": [], "waiting": {"w1:p1": state}}, handle)
+                    json.dump({"version": 2, "pane_id": [],
+                               "visited": {"w1:p1": state, "w1:p2": ["blocked", 3],
+                                           "": ["done", 1]}}, handle)
                 self.assertEqual(attention_next.read_cursor(self.path),
-                                 {"pane_id": None, "waiting": {}})
+                                 {"version": 2, "pane_id": None,
+                                  "visited": {"w1:p2": ["blocked", 3]}})
+
+    def test_unknown_or_invalid_versions_do_not_acknowledge_visits(self):
+        for version in (None, True, 2.0, "2", 1, 3):
+            with self.subTest(version=version):
+                with open(self.path, "w") as handle:
+                    json.dump({"version": version, "pane_id": "w1:p2",
+                               "visited": {"w1:p1": ["done", 10]}}, handle)
+                self.assertEqual(attention_next.read_cursor(self.path),
+                                 {"version": 2, "pane_id": "w1:p2", "visited": {}})
+
+    def test_malformed_visited_container_does_not_acknowledge_visits(self):
+        for visited in (None, [], "w1:p1", 1):
+            with open(self.path, "w") as handle:
+                json.dump({"version": 2, "visited": visited}, handle)
+            self.assertEqual(attention_next.read_cursor(self.path)["visited"], {})
 
     def test_an_unwritable_cursor_does_not_fail_the_jump(self):
         unwritable = os.path.join(self.tmp, "no-such-dir", "cursor.json")
-        attention_next.write_cursor(unwritable, "w1:p1", [agent("w1:p1")])
+        attention_next.write_cursor(unwritable, "w1:p1", {})
 
     def test_no_state_dir_means_no_cursor(self):
         # Without persisted state, the invoking pane can still anchor navigation.
         self.assertIsNone(attention_next.cursor_path(Context(env={})))
         self.assertEqual(attention_next.read_cursor(None), {})
-        attention_next.write_cursor(None, "w1:p1", [])
+        attention_next.write_cursor(None, "w1:p1", {})
 
 
 class ActionTest(unittest.TestCase):
@@ -437,6 +455,33 @@ class ActionTest(unittest.TestCase):
         self.assertEqual(self.focused(self.run_action(
             support.ok(agents), env={"HERDR_PANE_ID": "w1:p1"})), "w1:p3")
 
+    def test_state_change_during_focus_is_not_acknowledged(self):
+        agents = listing(agent("w1:p1"), agent("w1:p2"), agent("w1:p3", "done", 10))
+
+        def respond(*args):
+            """Return the snapshot or simulate a new answer during focus.
+
+            Args:
+                *args (str): Agent list or focus command arguments.
+
+            Returns:
+                dict: Agent listing for list, empty successful result for focus.
+            """
+            if args == ("agent", "list"):
+                return json.loads(json.dumps(agents))
+            self.assertEqual(args, ("agent", "focus", "w1:p3"))
+            agents["agents"][2]["state_change_seq"] = 20
+            return {}
+
+        with mock.patch.dict("os.environ", self.env, clear=True):
+            with mock.patch.object(herdr, "run_json", side_effect=respond) as cli:
+                self.assertEqual(next_action.main([]), 0)
+        self.assertEqual(cli.call_count, 2)  # No post-focus poll can consume the new answer.
+        cursor = attention_next.read_cursor(os.path.join(self.tmp, attention_next.CURSOR_FILE))
+        self.assertEqual(cursor["visited"], {"w1:p3": ["done", 10]})
+        self.assertEqual(self.focused(self.run_action(
+            support.ok(agents), env={"HERDR_PANE_ID": "w1:p1"})), "w1:p3")
+
     def test_no_other_agent_toasts_instead_of_failing(self):
         # Headless: without the toast the keypress would look broken.
         recorder = self.run_action(support.ok(listing(agent("w1:p9"))))
@@ -473,6 +518,37 @@ class ActionTest(unittest.TestCase):
 
 
 class EndToEndTest(support.EndToEndCase):
+    def test_second_done_agent_remains_urgent_after_visiting_the_first(self):
+        # Two unread answers arrive before the first press. Urgency selects p1
+        # (the older answer), even though priority order puts p2 above it.
+        fixtures = os.path.join(support.FIXTURES, "attention_pending_done")
+        config = os.path.join(self.tmp, "config.toml")
+        with open(config, "w") as handle:
+            handle.write('[ui]\nagent_panel_sort = "priority"\n')
+        env = {
+            "HERDR_CONFIG_PATH": config,
+            "HERDR_MOCK_DIR": os.path.join(fixtures, "before"),
+            "HERDR_PANE_ID": "w1:p3",
+        }
+        first = self.invoke("attention-next", env=env)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertIn("sort=priority", first.stdout)
+        self.assertEqual(self.herdr_commands(), ["agent list", "agent focus w1:p1"])
+
+        # Viewing p1 makes it idle. p2 is still done and has never been visited.
+        # Reuse the real cursor written by the first invocation, with no manual
+        # focus changes or cursor edits. Sidebar order is now p2 -> p1 -> p3.
+        env.update({
+            "HERDR_MOCK_DIR": os.path.join(fixtures, "after"),
+            "HERDR_PANE_ID": "w1:p1",
+        })
+        second = self.invoke("attention-next", env=env)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertEqual(
+            self.herdr_commands()[-1], "agent focus w1:p2",
+            "The unvisited done agent must retain urgency; observing it during "
+            "the first jump must not send the second jump to idle w1:p3.")
+
     def test_jumps_to_the_blocked_agent_in_the_fixture(self):
         # Fixture: blocked w1:p2 (seq 300), done w2:p1 (seq 200), idle w1:p1, working w2:p2.
         result = self.invoke("attention-next", env={"HERDR_PANE_ID": "w1:p1"})

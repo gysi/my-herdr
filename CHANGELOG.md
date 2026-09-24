@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-09-24
+
+### Fixed
+
+- Unvisited finished answers and input requests retain their urgency across attention jumps.
+  `attention-next` visits pending states before resuming sidebar cycling; an already-visited
+  blocker cannot displace an unread answer. `attention-prev` preserves pending work in other panes.
+- Saved attention state records visits and automatically reconsiders existing waiting agents
+  once on upgrade. Navigation logs include the source pane, selection reason, and pending states.
+
 ## [0.5.2] - 2026-09-24
 
 ### Fixed
@@ -96,7 +106,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Test harness: `unittest` suite with a fake `herdr` CLI and manifest
   validation, all run locally by `make check`.
 
-[Unreleased]: https://github.com/gysi/my-herdr/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/gysi/my-herdr/compare/v0.5.3...HEAD
+[0.5.3]: https://github.com/gysi/my-herdr/compare/v0.5.2...v0.5.3
+[0.5.2]: https://github.com/gysi/my-herdr/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/gysi/my-herdr/compare/v0.4.0...v0.5.1
 [0.4.0]: https://github.com/gysi/my-herdr/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/gysi/my-herdr/compare/v0.2.0...v0.3.0

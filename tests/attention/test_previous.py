@@ -41,7 +41,7 @@ class NavigationTest(unittest.TestCase):
     def test_reverse_ignores_new_episode_in_known_pane(self):
         agents = attention.ring(listing(agent("w1:p1", "done", 20),
                                        agent("w1:p2"), agent("w1:p3")))
-        cursor = {"pane_id": "w1:p1", "waiting": {"w1:p1": ["done", 10]}}
+        cursor = {"pane_id": "w1:p1", "visited": {"w1:p1": ["done", 10]}}
         self.assertEqual(attention.choose(agents, "w1:p3", cursor, -1)["pane_id"], "w1:p2")
 
     def test_unanchored_reverse_and_saved_anchor_outside_list(self):
@@ -62,11 +62,11 @@ class NavigationTest(unittest.TestCase):
 
 
 class ActionTest(support.EndToEndCase):
-    def test_next_prev_next_share_position(self):
+    def test_next_prev_next_share_position_and_preserve_pending_answer(self):
         here = "w1:p1"
         for action, expected in [("attention-next", "w1:p2"),
                                  ("attention-prev", "w1:p1"),
-                                 ("attention-next", "w1:p2")]:
+                                 ("attention-next", "w2:p1")]:
             result = self.invoke(action, env={"HERDR_PANE_ID": here})
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(self.herdr_commands()[-1], "agent focus " + expected)
@@ -87,9 +87,9 @@ class ActionTest(support.EndToEndCase):
         # which would hide API/client-socket confusion in the fixture itself.
         path = Path(env["XDG_STATE_HOME"], "herdr/client-shell/local-39bad257cb5e1da8.json")
         path.parent.mkdir(parents=True)
-        # Mark waiting agents as already observed so next performs normal cycling.
+        # Both waiting states have already been visited, so next cycles normally.
         attention.write_cursor(os.path.join(self.tmp, attention.CURSOR_FILE), "w1:p2",
-                               agents["agents"])
+                               {"w1:p3": ["blocked", 0], "w1:p4": ["done", 0]})
         for mode, action, expected in [("spaces", "attention-next", "w1:p3"),
                                        ("priority", "attention-next", "w1:p1"),
                                        ("priority", "attention-prev", "w1:p4"),

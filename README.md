@@ -40,12 +40,17 @@ One key to reach any agent. It reads `herdr agent list` and works from two order
 - **Urgency**, which decides when to leave the ring: `blocked` (waiting for input) before `done`
   (finished, nobody has looked yet), longest-waiting first.
 
-An agent that has *newly* started waiting cuts in and takes the next press. One that merely keeps
-waiting does not, so a permanently blocked agent can't trap the key and leave everyone else
-unreachable. A fresh answer or input request in the same pane counts as new, even if its
-intervening work happened entirely between keypresses or you switched panes by clicking.
-Urgency uses the oldest waiting agent even when the sidebar sorts newest first.
+Each unvisited waiting state stays urgent until you visit it or herdr stops reporting it as
+waiting. If several answers arrive, successive presses visit each before normal cycling resumes.
+A visited blocker cannot displace an unread answer or trap navigation. A fresh answer or input
+request in that pane becomes urgent again when its status or state-change sequence changes,
+even if its intervening work happened entirely between keypresses.
+Urgency uses the oldest pending agent even when the sidebar sorts newest first.
 It works across workspaces and never targets the pane you pressed the key in.
+
+The plugin polls once per keypress; herdr detects whether agents are blocked or finished.
+Herdr's `done` means finished and unread: viewing the pane clears it to `idle`. A blocked agent
+keeps that status until its request is resolved, so the plugin remembers which request you visited.
 
 This differs from herdr's built-in `open_notification_target`, which jumps to whichever agent the
 *currently visible* toast belongs to: that needs toasts enabled and is gone once the toast is.
@@ -61,8 +66,15 @@ previous from C selects B. It reverses list order, rather than retracing visited
 Both actions start from the currently focused agent, including after mouse selection. From a
 non-agent pane, they use the last successful attention jump; without one, next starts at the top
 and previous at the bottom. They share `attention-next.json` in the plugin state directory and
-record each waiting agent's status and state-change sequence after every successful jump.
+save visits only after a successful jump. Both the source and destination count as visited;
+other pending agents retain their urgency, including after a previous jump.
 Priority order can change as agents work or finish, so the neighboring rows can change between presses.
+
+Clicking a pane and invoking either action there also counts as a visit. A blocked pane clicked
+and left entirely between keypresses may still get one urgency visit, since the plugin does not
+observe those focus changes. On upgrade, existing waiting agents are reconsidered once because
+older saved state cannot identify visits. Missing or unwritable state keeps navigation usable,
+but visits cannot be remembered between presses.
 
 **Sidebar matching:** intended for one local client using herdr 0.9.1's standard grouped/priority
 view. Each press reads herdr's saved session-specific sidebar preference, falling back to

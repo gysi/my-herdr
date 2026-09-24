@@ -54,6 +54,8 @@ None.
 
 ## Completed plans
 
+- `APEND`: [Preserve pending attention until visited](plans/2026-09-24-APEND-pending-attention.md).
+  Unvisited waiting states retain urgency; all 296 tests and local checks passed.
 - `MOD`: [Feature packages](plans/2026-09-24-MOD-feature-packages.md).
   Feature packages and grouped tests are complete; all 283 tests and local checks passed.
 - `ATTN`: [Sidebar attention navigation](plans/2026-09-24-ATTN-sidebar-attention-navigation.md).

@@ -1,6 +1,6 @@
 """Shared attention navigation in the local herdr sidebar's current order.
 
-Forward urgency uses oldest blocked/done agents, independently of sidebar sort.
+Forward urgency uses unvisited blocked/done states, independently of sidebar sort.
 Normal navigation starts from the invoking pane, or the shared saved position
 when invoked outside the agent list. Both directions skip the invoking pane.
 """
@@ -17,6 +17,7 @@ from .sidebar_order import sort_mode
 WAITING = ("blocked", "done")
 
 CURSOR_FILE = "attention-next.json"
+CURSOR_VERSION = 2
 
 
 def navigate(direction=1):
@@ -46,15 +47,21 @@ def navigate(direction=1):
         return 0
 
     path = cursor_path(ctx)
-    target = choose(agents, here, read_cursor(path), direction)
+    cursor = read_cursor(path)
+    pending = pending_agents(agents, here, cursor)
+    target = choose(agents, here, cursor, direction)
+    visited = visited_states(agents, cursor, here, target["pane_id"])
     herdr.run_json("agent", "focus", target["pane_id"])
     # Only now: an anchor pointing at a pane we failed to reach would make the
     # next press start from the wrong place.
-    write_cursor(path, target["pane_id"], agents)
+    write_cursor(path, target["pane_id"], visited)
 
-    print("%s: focused %s (%s, %s, seq %s) of %d agents, %d waiting; sort=%s" % (
+    reason = "urgent" if direction == 1 and pending else "sidebar"
+    print("%s: focused %s (%s, %s, seq %s) of %d agents, %d waiting; "
+          "sort=%s; source=%s; reason=%s; pending=%s" % (
         action, target["pane_id"], target.get("agent") or "?", target.get("agent_status"),
-        target.get("state_change_seq"), len(agents), len(waiting_ids(agents)), mode))
+        target.get("state_change_seq"), len(agents), len(waiting_ids(agents)), mode,
+        here or "?", reason, json.dumps(waiting_states(pending), sort_keys=True)))
     return 0
 
 
@@ -91,27 +98,60 @@ def choose(agents, here, cursor, direction=1):
         agents (list[dict]): Complete sidebar order from ring().
         here (str or None): Invoking pane ID; anchors navigation and is excluded
             as a target. None uses the saved cursor when available.
-        cursor (dict): Previous ``pane_id`` anchor and ``waiting`` mapping from
-            pane IDs to [status, state-change sequence] lists. An empty dict or
-            a legacy waiting-ID list makes current waiting states fresh.
+        cursor (dict): Validated ``pane_id`` anchor and ``visited`` mapping from
+            pane IDs to [status, state-change sequence] lists. Missing visits
+            make current waiting states pending.
         direction (int): 1 walks down with urgency; -1 walks up without urgency.
 
     Returns:
         dict or None: Forward urgency target, otherwise the adjacent eligible agent;
             None when no pane other than here exists.
     """
-    previous = cursor.get("waiting")
-    previous = previous if isinstance(previous, dict) else {}
-    if direction == 1 and any(previous.get(pane) != state
-                              for pane, state in waiting_states(agents).items()):
-        # A pane can finish another turn between presses without us observing
-        # its working state. Compare the waiting episode, not just its pane ID.
-        urgent = most_urgent(agents, here)
+    if direction == 1:
+        urgent = most_urgent(pending_agents(agents, here, cursor), here)
         if urgent is not None:
             return urgent
     pane_ids = [item["pane_id"] for item in agents]
     anchor = here if here in pane_ids else cursor.get("pane_id")
     return next_after(agents, anchor, here, direction)
+
+
+def visited_states(agents, cursor, *panes):
+    """Retain matching visits and acknowledge explicitly visited panes.
+
+    Args:
+        agents (list[dict]): Current agent snapshot, taken before focusing.
+        cursor (dict): Validated saved state with an optional visited mapping.
+        *panes (str or None): Source/destination pane IDs to acknowledge in this
+            snapshot; None and non-waiting panes add no visit.
+
+    Returns:
+        dict: Pane IDs mapped to [status, sequence] for still-current visits.
+            Inputs are not mutated; disappeared or changed states are removed.
+    """
+    waiting = waiting_states(agents)
+    previous = cursor.get("visited")
+    previous = previous if isinstance(previous, dict) else {}
+    visited = {pane: state for pane, state in waiting.items()
+               if previous.get(pane) == state}
+    visited.update({pane: waiting[pane] for pane in panes if pane in waiting})
+    return visited
+
+
+def pending_agents(agents, here, cursor):
+    """Find waiting agents whose current states have not been visited.
+
+    Args:
+        agents (list[dict]): Complete current agent snapshot in sidebar order.
+        here (str or None): Invoking pane, already viewed; None if unavailable.
+        cursor (dict): Validated saved visit records and navigation anchor.
+
+    Returns:
+        list[dict]: Unvisited blocked/done records, excluding the invoking pane.
+    """
+    visited = visited_states(agents, cursor, here)
+    return [item for item in agents if item.get("agent_status") in WAITING
+            and item["pane_id"] not in visited]
 
 
 def most_urgent(agents, here):
@@ -164,9 +204,7 @@ def next_after(agents, anchor, here, direction=1):
 def waiting_ids(agents):
     """The pane ids that want attention, sorted.
 
-    Computed over the whole ring, including the current pane, so that walking
-    onto a blocked agent does not make it look like it stopped waiting and then
-    started again on the way back.
+    Includes the current pane for the diagnostic waiting count.
 
     Args:
         agents (list[dict]): Complete agent ring, including the invoking pane.
@@ -259,9 +297,10 @@ def read_cursor(path):
         path (str or None): Cursor file path. None or an empty string skips reading.
 
     Returns:
-        dict: Stored ``pane_id`` anchor and ``waiting`` mapping of pane IDs to
-            [status, state-change sequence] lists. Legacy waiting-ID lists and
-            malformed entries are discarded so waiting agents are reconsidered.
+        dict: Stored ``pane_id`` anchor and validated ``visited`` mapping of pane
+            IDs to [status, state-change sequence] lists, with version 2. Legacy
+            or unknown versions retain only the anchor; malformed visits are
+            discarded so waiting agents are reconsidered.
             An unreadable or non-object file returns an empty dict.
     """
     if not path:
@@ -273,32 +312,37 @@ def read_cursor(path):
         return {}
     if not isinstance(cursor, dict):
         return {}
-    waiting = cursor.get("waiting")
-    waiting = waiting if isinstance(waiting, dict) else {}
+    visited = cursor.get("visited")
+    if (type(cursor.get("version")) is not int or cursor["version"] != CURSOR_VERSION
+            or not isinstance(visited, dict)):
+        visited = {}
     return {
+        "version": CURSOR_VERSION,
         "pane_id": cursor.get("pane_id") if isinstance(cursor.get("pane_id"), str) else None,
-        "waiting": {pane: state for pane, state in waiting.items()
-                    if isinstance(state, list) and len(state) == 2
+        "visited": {pane: state for pane, state in visited.items()
+                    if isinstance(pane, str) and pane
+                    and isinstance(state, list) and len(state) == 2
                     and state[0] in WAITING and type(state[1]) is int},
     }
 
 
-def write_cursor(path, pane_id, agents):
-    """Record the successful jump and waiting agents, ignoring filesystem errors.
+def write_cursor(path, pane_id, visited):
+    """Record the successful jump and visits, ignoring filesystem errors.
 
     Filesystem errors are ignored, leaving navigation usable without saved state.
 
     Args:
         path (str or None): Cursor file path; None or an empty string skips writing.
         pane_id (str): Pane that herdr successfully focused.
-        agents (list[dict]): Complete agent ring used to record each waiting
-            pane's status and state-change sequence.
+        visited (dict): Reconciled visits mapping pane IDs to [status, sequence]
+            lists, including only source/destination and retained prior visits.
     """
     if not path:
         return
     try:
         with open(path, "w") as handle:
-            json.dump({"pane_id": pane_id, "waiting": waiting_states(agents)}, handle)
+            json.dump({"version": CURSOR_VERSION, "pane_id": pane_id,
+                       "visited": visited}, handle)
     except (IOError, OSError):
         # Losing the cursor costs one misplaced jump, nothing more; failing the
         # action over it would cost the jump itself.
