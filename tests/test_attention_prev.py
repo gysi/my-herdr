@@ -38,6 +38,12 @@ class NavigationTest(unittest.TestCase):
                                            agent("w1:p2"), agent("w1:p3")))
             self.assertEqual(attention.choose(agents, "w1:p3", {}, -1)["pane_id"], "w1:p2")
 
+    def test_reverse_ignores_new_episode_in_known_pane(self):
+        agents = attention.ring(listing(agent("w1:p1", "done", 20),
+                                       agent("w1:p2"), agent("w1:p3")))
+        cursor = {"pane_id": "w1:p1", "waiting": {"w1:p1": ["done", 10]}}
+        self.assertEqual(attention.choose(agents, "w1:p3", cursor, -1)["pane_id"], "w1:p2")
+
     def test_unanchored_reverse_and_saved_anchor_outside_list(self):
         agents = attention.ring(listing(agent("w1:p1"), agent("w1:p2"), agent("w1:p3")))
         for cursor, expected in [({}, "w1:p3"), ({"pane_id": "gone"}, "w1:p3"),

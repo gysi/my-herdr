@@ -91,17 +91,21 @@ def choose(agents, here, cursor, direction=1):
         agents (list[dict]): Complete sidebar order from ring().
         here (str or None): Invoking pane ID; anchors navigation and is excluded
             as a target. None uses the saved cursor when available.
-        cursor (dict): Previous ``pane_id`` anchor and ``waiting`` ID list;
-            an empty dict starts a fresh walk.
+        cursor (dict): Previous ``pane_id`` anchor and ``waiting`` mapping from
+            pane IDs to [status, state-change sequence] lists. An empty dict or
+            a legacy waiting-ID list makes current waiting states fresh.
         direction (int): 1 walks down with urgency; -1 walks up without urgency.
 
     Returns:
         dict or None: Forward urgency target, otherwise the adjacent eligible agent;
             None when no pane other than here exists.
     """
-    if direction == 1 and set(waiting_ids(agents)) - set(cursor.get("waiting") or []):
-        # Somebody started waiting since the last press. That is news, and news
-        # interrupts the walk.
+    previous = cursor.get("waiting")
+    previous = previous if isinstance(previous, dict) else {}
+    if direction == 1 and any(previous.get(pane) != state
+                              for pane, state in waiting_states(agents).items()):
+        # A pane can finish another turn between presses without us observing
+        # its working state. Compare the waiting episode, not just its pane ID.
         urgent = most_urgent(agents, here)
         if urgent is not None:
             return urgent
@@ -174,6 +178,21 @@ def waiting_ids(agents):
         item["pane_id"] for item in agents if item.get("agent_status") in WAITING)
 
 
+def waiting_states(agents):
+    """Identify the waiting episode of every blocked or unread agent.
+
+    Args:
+        agents (list[dict]): Complete agent ring, including the invoking pane.
+
+    Returns:
+        dict: Pane IDs mapped to [status, state-change sequence] lists. A changed
+            status or sequence identifies fresh urgency; an unusable sequence
+            falls back to zero, as in urgency ordering.
+    """
+    return {item["pane_id"]: [item["agent_status"], _seq(item)]
+            for item in agents if item.get("agent_status") in WAITING}
+
+
 def _seq(item):
     """Read an agent's state-change sequence for age ordering.
 
@@ -240,8 +259,10 @@ def read_cursor(path):
         path (str or None): Cursor file path. None or an empty string skips reading.
 
     Returns:
-        dict: Stored ``pane_id`` and ``waiting`` fields, or an empty dict when
-            the file cannot be read as a JSON object.
+        dict: Stored ``pane_id`` anchor and ``waiting`` mapping of pane IDs to
+            [status, state-change sequence] lists. Legacy waiting-ID lists and
+            malformed entries are discarded so waiting agents are reconsidered.
+            An unreadable or non-object file returns an empty dict.
     """
     if not path:
         return {}
@@ -253,26 +274,31 @@ def read_cursor(path):
     if not isinstance(cursor, dict):
         return {}
     waiting = cursor.get("waiting")
+    waiting = waiting if isinstance(waiting, dict) else {}
     return {
         "pane_id": cursor.get("pane_id") if isinstance(cursor.get("pane_id"), str) else None,
-        "waiting": [pane for pane in waiting if isinstance(pane, str)]
-        if isinstance(waiting, list) else [],
+        "waiting": {pane: state for pane, state in waiting.items()
+                    if isinstance(state, list) and len(state) == 2
+                    and state[0] in WAITING and type(state[1]) is int},
     }
 
 
 def write_cursor(path, pane_id, agents):
     """Record the successful jump and waiting agents, ignoring filesystem errors.
 
+    Filesystem errors are ignored, leaving navigation usable without saved state.
+
     Args:
         path (str or None): Cursor file path; None or an empty string skips writing.
         pane_id (str): Pane that herdr successfully focused.
-        agents (list[dict]): Complete agent ring used to record waiting pane IDs.
+        agents (list[dict]): Complete agent ring used to record each waiting
+            pane's status and state-change sequence.
     """
     if not path:
         return
     try:
         with open(path, "w") as handle:
-            json.dump({"pane_id": pane_id, "waiting": waiting_ids(agents)}, handle)
+            json.dump({"pane_id": pane_id, "waiting": waiting_states(agents)}, handle)
     except (IOError, OSError):
         # Losing the cursor costs one misplaced jump, nothing more; failing the
         # action over it would cost the jump itself.

@@ -42,7 +42,9 @@ One key to reach any agent. It reads `herdr agent list` and works from two order
 
 An agent that has *newly* started waiting cuts in and takes the next press. One that merely keeps
 waiting does not, so a permanently blocked agent can't trap the key and leave everyone else
-unreachable. Urgency uses the oldest waiting agent even when the sidebar sorts newest first.
+unreachable. A fresh answer or input request in the same pane counts as new, even if its
+intervening work happened entirely between keypresses or you switched panes by clicking.
+Urgency uses the oldest waiting agent even when the sidebar sorts newest first.
 It works across workspaces and never targets the pane you pressed the key in.
 
 This differs from herdr's built-in `open_notification_target`, which jumps to whichever agent the
@@ -59,8 +61,8 @@ previous from C selects B. It reverses list order, rather than retracing visited
 Both actions start from the currently focused agent, including after mouse selection. From a
 non-agent pane, they use the last successful attention jump; without one, next starts at the top
 and previous at the bottom. They share `attention-next.json` in the plugin state directory and
-record the current waiting-agent snapshot after every successful jump. Priority order can change
-as agents work or finish, so the neighboring rows can change between presses.
+record each waiting agent's status and state-change sequence after every successful jump.
+Priority order can change as agents work or finish, so the neighboring rows can change between presses.
 
 **Sidebar matching:** intended for one local client using herdr 0.9.1's standard grouped/priority
 view. Each press reads herdr's saved session-specific sidebar preference, falling back to

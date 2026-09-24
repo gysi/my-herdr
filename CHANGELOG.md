@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-09-24
+
+### Fixed
+
+- `attention-next` recognizes a fresh answer or input request in a pane that was also waiting
+  at the previous navigation action, including when the intervening work was never observed.
+  Unchanged waiting states still allow normal cycling. Existing saved navigation state is
+  upgraded automatically, reconsidering waiting agents once on the first jump.
+
 ## [0.5.1] - 2026-09-24
 
 ### Added

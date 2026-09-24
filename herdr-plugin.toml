@@ -9,7 +9,7 @@
 
 id = "my-herdr"                 # lowercase and dot-free: clean state dirs, unambiguous qualified ids
 name = "my-herdr"
-version = "0.5.1"
+version = "0.5.2"
 min_herdr_version = "0.9.1"     # current stable; `agent focus` moves the client only from 0.9.1 on
 description = "Small herdr actions for working with AI coding agents: one key to reach whichever agent needs you, fork a Claude Code or Codex session into a new tab, or give a pane a tab of its own."
 platforms = ["linux", "macos"]
