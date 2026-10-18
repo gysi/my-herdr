@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-17
+
+### Added
+
+- OpenCode support for `fork-tab` and `fork-tab-ask`, using its session API to save an
+  independent fork and opening it in a new tab with `opencode --session <fork-id>`. A requested
+  name labels both the tab and the forked session. Incompatible or unidentifiable CLI/server versions
+  are refused before opening a tab or naming popup.
+- OpenCode forks use the session's own directory and the normal shared-service connection. API mutations are never retried. A saved fork is retained if naming or tab startup fails; the error notification names it and shows the `opencode --session <fork-id>` command to resume it. Requires herdr's OpenCode TUI integration; no integration is installed automatically.
+
+### Changed
+
+- Agent testing and maintenance target the latest releases of Claude Code, Codex, and OpenCode.
+  Older versions may still work, but are not tested or actively supported.
+
 ## [0.5.3] - 2026-09-24
 
 ### Fixed
@@ -106,7 +121,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Test harness: `unittest` suite with a fake `herdr` CLI and manifest
   validation, all run locally by `make check`.
 
-[Unreleased]: https://github.com/gysi/my-herdr/compare/v0.5.3...HEAD
+[Unreleased]: https://github.com/gysi/my-herdr/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/gysi/my-herdr/compare/v0.5.3...v0.6.0
 [0.5.3]: https://github.com/gysi/my-herdr/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/gysi/my-herdr/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/gysi/my-herdr/compare/v0.4.0...v0.5.1

@@ -6,8 +6,8 @@
 > the contract. **herdr's own documentation and the live `herdr` CLI always win**; when they
 > disagree with this file, fix the file.
 
-The herdr plugin contract as `my-herdr` relies on it. Everything here describes **herdr 0.9.1**
-(protocol 22), the current stable release and the version this plugin targets.
+The herdr plugin contract as `my-herdr` relies on it. Unless a targeted note specifies additional
+verified versions, this describes **herdr 0.9.1** (protocol 22), the version this plugin targets.
 
 - **[docs]** or unmarked: from the official documentation pages linked below, summarized in our own words; quotation marks mark the few places where herdr's exact wording is kept.
 - **[src]**: read from the herdr source, at the paths listed below.
@@ -754,7 +754,7 @@ Browse the marketplace at https://herdr.dev/plugins/.
 
 **Note for `my-herdr`:** the repo root is the plugin, so `herdr-plugin.toml` goes at the repo root. Install with `herdr plugin install <owner>/my-herdr`. A **fork** is excluded from the marketplace, and a private repo cannot be listed.
 
-### 7.4 Agent-related commands useful for `fork-tab`
+### 7.4 Agent session detection and forking
 
 ```bash
 herdr agent get <target>        # target = unique live agent name or pane id
@@ -764,29 +764,28 @@ herdr agent start <name> --kind KIND --pane ID [--timeout MS] [-- <agent-args...
 
 `agent_session` ([socket API page][socket-api]): `pane.get`, `pane.list`, `agent.get` and `agent.list` include a read-only `agent_session` object when herdr has stored a native session reference for the agent, and omit the field otherwise.
 
-**Codex forks [local CLI help, official Codex docs].** herdr 0.9.1 accepts `codex` for
-`agent start --kind` and `integration install`. Codex panes can report
-`agent_session = {agent: "codex", kind: "id", source: "herdr:codex", value: "<session-id>"}`.
-Install `herdr integration install codex`, then start or resume Codex in the pane so herdr can
-learn its session ID. Both fork actions require a nonempty string ID and reject a session's
-explicit agent field when it conflicts with the pane's agent.
+Both fork actions require a nonempty string session ID of kind `id` and reject a session's
+explicit agent field when it conflicts with the pane's agent. `myherdr/forking/agents.py` owns
+these shared checks and selects the Claude Code, Codex, or OpenCode adapter through one registry.
+Each adapter owns missing-session guidance, source validation/logging, fork preparation, CLI
+arguments, and environment selection. Validation does not create a fork; preparation saves an
+OpenCode fork before tab creation, while Claude/Codex create theirs at CLI startup.
+`myherdr/forking/workflow.py` shares tab creation, focus, shell readiness, startup,
+temporary-name clearing, and cleanup across all agents. The adapters forward `CODEX_HOME` for
+Codex and `CLAUDE_CONFIG_DIR` for Claude from the action environment, inherited from the herdr
+server; overrides set only in the source shell are not discovered.
 
-The installed `codex fork --help` accepts a session UUID and an optional prompt, with no
-session-name flag. The [official Codex CLI reference](https://learn.chatgpt.com/docs/developer-commands?surface=cli#codex-fork)
-describes a fork as a new chat preserving the original transcript. `my-herdr` launches:
+**`agent start` as an alternative to `pane run`** ([CLI reference][cli-reference]):
 
-```text
-herdr agent start <temporary-name> --kind codex --pane <new-pane> --timeout 60000 -- fork <session-id>
-```
+- It turns an existing, available shell pane into an agent pane. The pane's interactive shell must hold the foreground: no foreground command, editor or agent may be running.
+- The name must be unique among live agents and match `[a-z][a-z0-9_-]{0,31}`.
+- `--kind` picks herdr's canonical interactive executable for that agent; arguments after `--` go to that executable.
+- It returns success only once the expected agent owns that same terminal and is ready for interactive input. The default startup timeout is 30000 ms.
 
-The name from the popup labels only the herdr tab for Codex; neither a name nor an initial prompt
-is passed to Codex. Codex loads and validates its saved conversation itself. The plugin performs
-no Codex transcript search or storage precheck, so a missing conversation can remain visible in
-the new tab until startup times out and cleanup closes it. `fork_agents.py` holds agent-specific
-validation, arguments, and environment selection; `fork.py` shares tab creation, focus, shell
-readiness, startup, temporary-name clearing, and cleanup across both agents. The plugin forwards
-`CODEX_HOME` for Codex and `CLAUDE_CONFIG_DIR` for Claude from the action environment, inherited
-from the herdr server; overrides set only in the source shell are not discovered.
+This waits for the new shell to be ready, which `pane run` does not. The catch is the
+herdr agent-name regex and uniqueness requirement.
+
+#### 7.4.1 Claude Code
 
 For Claude this requires `herdr integration install claude`. Per the [integrations page][integrations], the installed hook reports the Claude Code session identity to the local herdr socket when a session starts, while Claude Code's state comes from herdr's screen-manifest detection.
 
@@ -837,20 +836,71 @@ Separately, `claude --resume <id>` on a session still open in another process ca
 **discarded branch** left by a rewind: the transcript keeps both branches, and Claude (2.1.278) has
 no flag to resume at a given message. A fork is only as current as those two allow.
 
-**`agent start` as an alternative to `pane run`** ([CLI reference][cli-reference]):
-
-- It turns an existing, available shell pane into an agent pane. The pane's interactive shell must hold the foreground: no foreground command, editor or agent may be running.
-- The name must be unique among live agents and match `[a-z][a-z0-9_-]{0,31}`.
-- `--kind` picks herdr's canonical interactive executable for that agent; arguments after `--` go to that executable.
-- It returns success only once the expected agent owns that same terminal and is ready for interactive input. The default startup timeout is 30000 ms.
-
-For example:
+`my-herdr` starts a named Claude fork with:
 
 ```bash
-herdr agent start <name> --kind claude --pane "$new_pane" -- --resume "$sid" --fork-session -n "$label"
+herdr agent start <name> --kind claude --pane "$new_pane" --timeout 60000 -- --resume "$sid" --fork-session -n "$label"
 ```
 
-This waits for the new shell to be ready, which `pane run` does not. The catch is the herdr agent-name regex and uniqueness requirement. Whether `--kind claude` launches `claude` from PATH exactly as the user's shell would is not documented.
+Whether `--kind claude` launches `claude` from PATH exactly as the user's shell would is
+not documented.
+
+#### 7.4.2 Codex
+
+Sources: local CLI help and official Codex docs. herdr 0.9.1 accepts `codex` for
+`agent start --kind` and `integration install`. Codex panes can report
+`agent_session = {agent: "codex", kind: "id", source: "herdr:codex", value: "<session-id>"}`.
+Install `herdr integration install codex`, then start or resume Codex in the pane so herdr can
+learn its session ID.
+
+The installed `codex fork --help` accepts a session UUID and an optional prompt, with no
+session-name flag. The [official Codex CLI reference](https://learn.chatgpt.com/docs/developer-commands?surface=cli#codex-fork)
+describes a fork as a new chat preserving the original transcript. `my-herdr` launches:
+
+```text
+herdr agent start <temporary-name> --kind codex --pane <new-pane> --timeout 60000 -- fork <session-id>
+```
+
+The name from the popup labels only the herdr tab for Codex; neither a name nor an initial prompt
+is passed to Codex. Codex loads and validates its saved conversation itself. The plugin performs
+no Codex transcript search or storage precheck, so a missing conversation can remain visible in
+the new tab until startup times out and cleanup closes it.
+
+#### 7.4.3 OpenCode
+
+Sources: [herdr integrations][integrations], [OpenCode V2 CLI](https://opencode.ai/v2/docs/cli),
+[V2 API](https://opencode.ai/v2/docs/api), and [OpenAPI](https://opencode.ai/v2/openapi.json).
+Targeted contract verification uses local `opencode v2.0.32` and `herdr 0.9.5` help/version output;
+no live session mutation is part of this verification. The plugin's minimum herdr remains 0.9.1.
+
+- herdr supports `integration install opencode` and `agent start --kind opencode`. Its integration
+  reports the TUI's selected session ID and lifecycle state. V2 reporting is pane-local even when
+  panes share one server. Mini and headless clients do not load that TUI integration.
+- my-herdr tests and maintains compatibility with the latest agent releases. Older versions
+  may still work, but are not tested or actively supported. Its current OpenCode implementation
+  uses the V2 API. Check `opencode --version` and
+  `opencode api get /api/info` → `.version` before mutations; unknown versions or API generations
+  older than V2 are refused. This guard does not check release freshness or promise long-term
+  support for any major version.
+- `opencode api <method> <path> [--data <json>]` performs normal service discovery and
+  authentication. It prints the raw HTTP response body, not a herdr-style result envelope.
+  HTTP errors print a body to stdout, `HTTP <status>` to stderr, and exit nonzero. Command
+  failures must therefore check exit status before parsing or trusting the body.
+- `GET /api/session/<id>` returns `{"data":{"id":"<id>","location":{"directory":"<absolute-path>"},…}}`.
+  Use that location for the new tab. Encode IDs as single path components.
+- `POST /api/session/<id>/fork` with `{}` copies the full projected history into an independent
+  child session. The response is `{"data":{"id":"<new-id>",…}}`; require a distinct nonempty ID.
+  `PATCH /api/session/<new-id>` with `{"title":"<name>"}` names only the fork and returns HTTP
+  204 with no response body. No prompt or permission override is sent.
+- The full-screen V2 CLI accepts `--session <id>` but has no root `--fork` flag. `agent start`
+  must receive the newly created ID, never the source ID. OpenCode APIs are called from the
+  headless action, not the naming popup; that action revalidates the selected session.
+- my-herdr supports the ordinary shared-service connection and inherited herdr server environment.
+  Source CLI `--server`/`--standalone`, private-service defaults, and shell-only environment
+  overrides are not discovered. Do not read credential files or put passwords/inline config
+  in logged tab argv. `opencode api` can start the normal service when needed.
+- A saved fork is logged and retained if naming, tab creation, or startup fails. Do not delete
+  sessions during rollback or retry uncertain API mutations: a timeout may occur after saving.
 
 ---
 

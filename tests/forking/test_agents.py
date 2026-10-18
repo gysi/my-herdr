@@ -6,10 +6,32 @@ from unittest import mock
 
 from tests import support
 from myherdr.forking import agents as fork_agents
+from myherdr.forking import claude, codex, opencode
 from myherdr.shared import herdr
 from myherdr.forking import tab as fork_tab, tab_ask as fork_tab_ask
 from myherdr.shared.errors import MyHerdrError
 from .test_tab import AGENT, SID, agent_get
+
+
+class AdapterTest(unittest.TestCase):
+    def test_invalid_agent_kinds_are_refused_before_adapter_lookup(self):
+        for kind in ("gemini", ["claude"], {"kind": "claude"}, True, 7):
+            with self.subTest(kind=kind):
+                with mock.patch.object(herdr, "run", support.Recorder(agent_get(agent=kind))):
+                    with self.assertRaisesRegex(MyHerdrError, "only works on"):
+                        fork_agents.forkable_agent("w1:p1")
+
+    def test_cli_fork_preparation_keeps_source_id_and_pane_directory(self):
+        for kind in ("claude", "codex"):
+            for name in (None, "", "named fork"):
+                for foreground in (None, "", "/home/user/foreground"):
+                    with self.subTest(kind=kind, name=name, foreground=foreground):
+                        source = dict(AGENT, agent=kind, foreground_cwd=foreground)
+                        self.assertEqual(fork_agents.prepare_fork(source, name), {
+                            "session_id": SID, "cwd": foreground or AGENT["cwd"]})
+        for adapter in (claude, codex):
+            self.assertEqual(adapter.prepare_fork({"agent_session": {"value": SID}}),
+                             {"session_id": SID, "cwd": None})
 
 
 class ValidationTest(unittest.TestCase):
@@ -17,48 +39,53 @@ class ValidationTest(unittest.TestCase):
         invalid = [None, {}, [], "bad", {"kind": "path", "value": "/tmp/session"}]
         invalid += [{"kind": "id", "value": value}
                     for value in (None, "", "  ", 1, True, [], {})]
-        for kind in ("claude", "codex"):
+        for kind in ("claude", "codex", "opencode"):
             for session in invalid:
                 for action in (fork_tab, fork_tab_ask):
                     with self.subTest(kind=kind, session=session, action=action.__name__):
                         recorder = support.Recorder(agent_get(kind, agent_session=session))
                         with mock.patch.dict(os.environ, {"HERDR_PANE_ID": "w1:p1"}, clear=True):
-                            with mock.patch.object(herdr, "run", recorder):
+                            with mock.patch.object(herdr, "run", recorder), mock.patch.object(
+                                    opencode, "validate") as validate:
                                 with self.assertRaises(MyHerdrError) as caught:
                                     action.main([])
                         self.assertIn("herdr integration install " + kind, str(caught.exception))
                         self.assertIn("this pane", str(caught.exception))
                         self.assertEqual(recorder.calls, [["agent", "get", "w1:p1"]])
+                        validate.assert_not_called()
 
     def test_conflicting_session_agent_is_refused_by_both_actions(self):
-        for kind, other in (("claude", "codex"), ("codex", "claude")):
+        for kind, other in (("claude", "codex"), ("codex", "claude"), ("opencode", "claude")):
             for action in (fork_tab, fork_tab_ask):
                 with self.subTest(kind=kind, action=action.__name__):
                     session = dict(AGENT["agent_session"], agent=other)
                     recorder = support.Recorder(agent_get(kind, agent_session=session))
                     with mock.patch.dict(os.environ, {"HERDR_PANE_ID": "w1:p1"}, clear=True):
-                        with mock.patch.object(herdr, "run", recorder):
+                        with mock.patch.object(herdr, "run", recorder), mock.patch.object(
+                                opencode, "validate") as validate:
                             with self.assertRaises(MyHerdrError) as caught:
                                 action.main([])
                     self.assertIn("reports a %s session for the %s pane" % (other, kind),
                                   str(caught.exception))
                     self.assertEqual(recorder.calls, [["agent", "get", "w1:p1"]])
+                    validate.assert_not_called()
 
     def test_optional_agent_metadata_is_not_required(self):
-        for kind in ("claude", "codex"):
+        for kind in ("claude", "codex", "opencode"):
             for extra in ({}, {"agent": None}, {"agent": kind}):
                 with self.subTest(kind=kind, extra=extra):
                     session = dict(kind="id", value=SID, **extra)
                     with mock.patch.object(herdr, "run", support.Recorder(
-                            agent_get(kind, agent_session=session))):
+                            agent_get(kind, agent_session=session))), mock.patch.object(
+                                opencode, "validate", return_value="/home/user/project"):
                         agent = fork_agents.forkable_agent("w1:p1", env={"HOME": support.NO_HOME})
                     self.assertEqual(agent["agent"], kind)
 
     def test_codex_never_checks_claude_storage_or_claims_to_have_checked_its_own(self):
         output = io.StringIO()
         with mock.patch.object(herdr, "run", support.Recorder(agent_get("codex"))):
-            with mock.patch.object(fork_agents, "conversation_saved") as saved:
-                with mock.patch.object(fork_agents, "claude_config_dir") as config:
+            with mock.patch.object(claude, "conversation_saved") as saved:
+                with mock.patch.object(claude, "claude_config_dir") as config:
                     with mock.patch("sys.stdout", output):
                         fork_agents.forkable_agent("w1:p1")
         saved.assert_not_called()
@@ -71,6 +98,8 @@ class ArgumentTest(unittest.TestCase):
         for name in (None, "", "it's \"$HOME\" -- & moreé"):
             with self.subTest(name=name):
                 self.assertEqual(fork_agents.fork_args("codex", SID, name), ["fork", SID])
+                self.assertEqual(fork_agents.fork_args("opencode", "ses_fork", name),
+                                 ["--session", "ses_fork"])
                 self.assertEqual(fork_agents.fork_args("claude", SID, name),
                                  ["--resume", SID, "--fork-session"] +
                                  (["-n", name] if name else []))
@@ -90,6 +119,11 @@ class ArgumentTest(unittest.TestCase):
             fork_agents.fork_args("gemini", SID)
         with self.assertRaises(MyHerdrError):
             fork_agents.forwarded_env("gemini", {})
+
+    def test_opencode_does_not_put_secrets_or_other_agents_config_in_tab_arguments(self):
+        env = {"OPENCODE_PASSWORD": "private", "OPENCODE_CONFIG_CONTENT": "private config",
+               "CLAUDE_CONFIG_DIR": "/claude", "CODEX_HOME": "/codex"}
+        self.assertEqual(fork_agents.forwarded_env("opencode", env), {})
 
 
 class SavedConversationTest(unittest.TestCase):
@@ -119,31 +153,31 @@ class SavedConversationTest(unittest.TestCase):
 
     def test_a_saved_conversation_is_found_in_any_project(self):
         self.save(SID)
-        self.assertIs(fork_agents.conversation_saved(SID, {"HOME": self.home}), True)
+        self.assertIs(claude.conversation_saved(SID, {"HOME": self.home}), True)
 
     def test_an_unsaved_one_is_not(self):
         # A session forked before its first message, or an id herdr kept
         # from before a resume: Claude has nothing under that name.
         self.save("another-session")
-        self.assertIs(fork_agents.conversation_saved(SID, {"HOME": self.home}), False)
+        self.assertIs(claude.conversation_saved(SID, {"HOME": self.home}), False)
 
     def test_no_store_at_all_means_cannot_tell(self):
         # Refusing on a guess could block a fork that would have worked.
-        self.assertIsNone(fork_agents.conversation_saved(SID, {"HOME": self.home}))
+        self.assertIsNone(claude.conversation_saved(SID, {"HOME": self.home}))
 
     def test_claude_config_dir_is_where_it_looks(self):
         # The same directory the fork's `claude --resume` will read.
         alt = os.path.join(self.home, "alt")
         self.save(SID, os.path.join(alt, "projects"))
-        self.assertIs(fork_agents.conversation_saved(
+        self.assertIs(claude.conversation_saved(
             SID, {"HOME": self.home, "CLAUDE_CONFIG_DIR": alt}), True)
         os.makedirs(self.projects)
-        self.assertIs(fork_agents.conversation_saved(SID, {"HOME": self.home}), False)
+        self.assertIs(claude.conversation_saved(SID, {"HOME": self.home}), False)
 
     def test_glob_characters_in_an_id_match_only_themselves(self):
         self.save("abc")
-        self.assertIs(fork_agents.conversation_saved("*", {"HOME": self.home}), False)
-        self.assertIs(fork_agents.conversation_saved("[a]bc", {"HOME": self.home}), False)
+        self.assertIs(claude.conversation_saved("*", {"HOME": self.home}), False)
+        self.assertIs(claude.conversation_saved("[a]bc", {"HOME": self.home}), False)
 
     def test_an_unsaved_session_is_refused_before_any_tab_exists(self):
         self.save("another-session")

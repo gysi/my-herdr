@@ -1,0 +1,20 @@
+{
+  "result": {
+    "type": "agent_info",
+    "agent": {
+      "agent": "opencode",
+      "agent_session": {
+        "agent": "opencode",
+        "kind": "id",
+        "source": "herdr:opencode",
+        "value": "ses_source"
+      },
+      "agent_status": "idle",
+      "cwd": "/home/user/project",
+      "foreground_cwd": "/home/user/project",
+      "pane_id": "w1:p3",
+      "tab_id": "w1:t1",
+      "workspace_id": "w1"
+    }
+  }
+}

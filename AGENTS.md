@@ -64,15 +64,21 @@ If the research and the live `herdr` CLI disagree, trust the CLI, then update th
 - Keybindings **cannot** be declared in the manifest. Document `[[keys.command]]` blocks
   (`type = "plugin_action"`) in the README.
 - `pane move --new-tab` takes `--label` (not `--tab-label`). Check `.result.move_result.changed`.
-- Fork actions support **Claude Code and Codex**. Read the session id from `herdr agent get <pane>`
-  → `.result.agent.agent_session.value`; require kind `id` and reject conflicting session-agent
-  metadata. The corresponding integration (`herdr integration install claude` or
-  `herdr integration install codex`) must be installed and the session started or resumed in the
-  pane. Never install integrations automatically.
+- Agent testing and maintenance target the **latest releases of Claude Code, Codex, and OpenCode**.
+  Older agent versions may still work, but are not tested or actively supported; do not add
+  legacy compatibility code. Exact versions in research and tests describe verified contracts,
+  not permanent support commitments. Do not reject an older version solely because it is not
+  the latest; reject it only when a known compatibility requirement is not met.
+- Fork actions support **Claude Code, Codex and OpenCode**. Read the session id from
+  `herdr agent get <pane>` → `.result.agent.agent_session.value`; require kind `id` and reject
+  conflicting session-agent metadata. The corresponding integration (`herdr integration install claude`,
+  `herdr integration install codex`, or `herdr integration install opencode`) must be installed
+  and the session started or resumed in the pane. Never install integrations automatically.
 - Codex launches with `fork <id>` and validates its own saved conversation; no transcript search
   or storage precheck. A requested name labels only the herdr tab. Forward `CODEX_HOME` for Codex
   and `CLAUDE_CONFIG_DIR` for Claude from the action environment; shell-only overrides are not
   discovered.
+- `myherdr/forking/opencode.py` checks OpenCode CLI and server versions and reads the source session through `opencode api`, saves a new fork, optionally titles it, then launches `--session <fork-id>`. Use the session's API-reported directory. Only normal shared-service connections are supported; source-shell overrides and custom `--server`/standalone connections are not discovered. Do not retry mutations or delete saved forks on startup failure; log their IDs. Never put passwords/inline config in tab argv.
 - herdr learns a Claude session id only when Claude **starts** in the pane.
   **Background Claude sessions** (`claude --bg`, `claude agents`, switching sessions inside Claude)
   run in Claude's daemon and are never tied to a pane: herdr shows their status (read from the
@@ -88,12 +94,12 @@ myherdr/cli.py           dispatch, help, and consistent error reporting
 myherdr/entrypoints.py   public action/pane IDs -> lazily imported feature modules
 myherdr/shared/          herdr CLI wrapper, invocation context, and common errors
 myherdr/attention/       next/previous entrypoints, navigation, and sidebar ordering
-myherdr/forking/         tab/tab_ask entrypoints, workflow, agents, request, popup, line editor
+myherdr/forking/         tab/tab_ask entrypoints, workflow, agent adapters, request, popup, line editor
 myherdr/pane_to_tab/     move-to-tab action
 myherdr/diagnostics/     ping action
 tests/                  feature/shared packages, dispatcher/registry/manifest tests
 tests/support.py        common mock helpers
-tests/mocks/herdr       executable mock CLI; fixtures/ holds JSON responses
+tests/mocks/            executable mock herdr/OpenCode CLIs; fixtures/ holds JSON responses
 tests/check_manifest.py offline manifest/registry agreement and module validation
 mise.toml                pinned development tools (Ruff)
 ruff.toml                local Python and docstring lint rules
@@ -104,6 +110,12 @@ docs/                    README.md (index), plans/, research/
 Features import their own modules and `shared`, never another feature or the dispatcher.
 Shared modules do not depend on features. Keep package `__init__.py` files free of eager
 feature imports. Feature-specific helpers stay with their feature until reuse is needed.
+
+Forking uses one adapter registry in `myherdr/forking/agents.py`, with shared pane/session
+metadata checks there. `claude.py`, `codex.py`, and `opencode.py` own agent-specific guidance,
+validation/logging, preparation, launch arguments, and environment selection. Validation must
+not create forks; preparation may save an OpenCode fork before tab creation. Keep tab lifecycle
+and cleanup in `workflow.py`, without agent-kind branches or direct agent-module imports.
 
 **Adding an action** = feature module with `main(args)` + `entrypoints.py` registry entry +
 `[[actions]]` block + feature test + README row. Pane entrypoints use the `panes` registry and
@@ -124,10 +136,10 @@ herdr plugin action invoke my-herdr.<action>
 herdr plugin log list --plugin my-herdr    # the only place action output goes
 ```
 
-`make syntax` must `py_compile` `bin/my-herdr` and `tests/mocks/herdr` by name: they have no `.py`
-extension, so `compileall` skips them even when named explicitly.
+`make syntax` must `py_compile` `bin/my-herdr`, `tests/mocks/herdr`, and `tests/mocks/opencode`
+by name: they have no `.py` extension, so `compileall` skips them even when named explicitly.
 
-Both of those files need their **executable bit** kept in git; the wrapper reports a non-executable
+All three files need their **executable bit** kept in git; the wrapper reports a non-executable
 `HERDR_BIN_PATH` as an error, but the tests spawn them directly.
 
 ## File Editing Preference
@@ -163,6 +175,7 @@ Both of those files need their **executable bit** kept in git; the wrapper repor
   preserve them as historical design records instead of rewriting them for later features.
   `CHANGELOG.md` records user-visible releases, not the path the implementation took.
 - Bump `version` in `herdr-plugin.toml` and add a `CHANGELOG.md` entry for every user-visible change.
+- **Don't hard-wrap Markdown prose to a fixed width.** Write each paragraph and list item as one line and let the editor wrap it. Break lines only where Markdown needs it: list items, table rows, headings, code blocks. Don't reflow existing paragraphs unless asked; when you rewrite one, write it as one line.
 - The repo is **public** (github.com/gysi/my-herdr). Never commit secrets, session ids, or personal
   paths in examples. Use placeholders.
 - Copied code from other plugins: MIT only, with a `# Adapted from <repo>/<path> (MIT)` comment.

@@ -11,15 +11,15 @@ check: lint syntax manifest test
 lint:
 	$(RUFF) check .
 
-## unit + end-to-end tests (end-to-end run bin/my-herdr against tests/mocks/herdr)
+## unit + end-to-end tests (end-to-end use mock herdr and OpenCode CLIs)
 test:
 	$(PYTHON) -m unittest discover -s tests -t .
 
 ## syntax gate. compileall only looks at *.py, so the extensionless entry
-## point and the fake herdr CLI need py_compile by name.
+## point and the fake CLIs need py_compile by name.
 syntax:
 	$(PYTHON) -m compileall -q myherdr tests
-	$(PYTHON) -m py_compile bin/my-herdr tests/mocks/herdr
+	$(PYTHON) -m py_compile bin/my-herdr tests/mocks/herdr tests/mocks/opencode
 
 ## offline manifest validation (herdr plugin link is the authoritative one)
 manifest:

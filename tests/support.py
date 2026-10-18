@@ -133,7 +133,8 @@ class EndToEndCase(unittest.TestCase):
         # (for example when the suite runs inside a herdr pane), so start clean.
         # Agent config and popup variables must not read a developer's stores either.
         for key in list(env):
-            if key.startswith(("HERDR_", "MH_")) or key in ("CODEX_HOME", "CLAUDE_CONFIG_DIR"):
+            if key.startswith(("HERDR_", "MH_", "OPENCODE_")) or key in (
+                    "CODEX_HOME", "CLAUDE_CONFIG_DIR"):
                 del env[key]
         env.update({
             "HERDR_BIN_PATH": MOCK,
@@ -143,6 +144,8 @@ class EndToEndCase(unittest.TestCase):
             "HERDR_PLUGIN_ID": "my-herdr",
             "HERDR_PLUGIN_ROOT": ROOT,
             "HERDR_PLUGIN_STATE_DIR": self.tmp,
+            "PATH": os.path.join(TESTS, "mocks") + os.pathsep + env.get("PATH", os.defpath),
+            "OPENCODE_MOCK_LOG": os.path.join(self.tmp, "opencode.log"),
             # A fresh home per test: nothing of the developer's leaks in, and a
             # test can build a Claude store under it (see claude_store()).
             "HOME": os.path.join(self.tmp, "home"),

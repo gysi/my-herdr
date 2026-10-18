@@ -1,6 +1,6 @@
 target-version = "py39"
 # These Python entrypoints have no .py extension.
-extend-include = ["bin/my-herdr", "tests/mocks/herdr"]
+extend-include = ["bin/my-herdr", "tests/mocks/herdr", "tests/mocks/opencode"]
 
 [lint]
 select = [

@@ -1,9 +1,31 @@
-"""Session validation, CLI arguments and environment for Claude and Codex forks."""
-import glob
-import os
+"""Agent adapter registry, shared session validation, and fork delegation."""
 
+from . import claude, codex, opencode
 from ..shared import herdr
 from ..shared.errors import MyHerdrError
+
+
+#: Agent modules implement the same five functions without a class hierarchy.
+ADAPTERS = {"claude": claude, "codex": codex, "opencode": opencode}
+
+
+def get_adapter(kind):
+    """Select the registered module that owns an agent's fork behavior.
+
+    Args:
+        kind (str): Canonical agent kind reported by herdr.
+
+    Returns:
+        module: Adapter implementing missing_session_message, validate_source,
+        prepare_fork, fork_args, and forwarded_env.
+
+    Raises:
+        MyHerdrError: The agent kind has no registered fork adapter.
+    """
+    adapter = ADAPTERS.get(kind) if isinstance(kind, str) else None
+    if adapter is None:
+        raise MyHerdrError("cannot fork unsupported agent %s" % kind)
+    return adapter
 
 
 def forkable_agent(pane_id, env=None):
@@ -11,28 +33,33 @@ def forkable_agent(pane_id, env=None):
 
     Logs the pane, agent kind, and session ID. Claude's saved conversation is
     checked when its store is available; Codex validates its own storage later.
+    OpenCode verifies its CLI/server compatibility and source session through its API.
 
     Args:
         pane_id (str): Source herdr pane ID whose current session will be forked.
         env (Mapping[str, str] or None): Environment used to locate Claude's
-            store. None uses os.environ. Codex does not use this parameter.
+            store. None uses os.environ. Codex/OpenCode do not use this parameter.
 
     Returns:
         dict: herdr's agent record with a supported ``agent`` kind and a
-            nonempty string ``agent_session.value`` of kind ``id``.
+            nonempty string ``agent_session.value`` of kind ``id``. OpenCode
+            adds ``opencode_directory`` from its authoritative session location.
 
     Raises:
         MyHerdrError: No supported agent or usable session was found, session
-            metadata conflicts, or Claude's store lacks the conversation.
+            metadata conflicts, Claude's store lacks the conversation, or
+            OpenCode compatibility validation fails.
     """
     result = herdr.try_json("agent", "get", pane_id)
     agent = (result or {}).get("agent")
     if not isinstance(agent, dict) or not agent.get("agent"):
         raise MyHerdrError("no agent is running in %s" % pane_id)
     kind = agent["agent"]
-    if kind not in ("claude", "codex"):
+    adapter = ADAPTERS.get(kind) if isinstance(kind, str) else None
+    if adapter is None:
         raise MyHerdrError(
-            "fork-tab only works on Claude Code or Codex panes; %s runs %s" % (pane_id, kind))
+            "fork-tab only works on Claude Code, Codex or OpenCode panes; %s runs %s"
+            % (pane_id, kind))
 
     session = agent.get("agent_session")
     if not isinstance(session, dict):
@@ -45,42 +72,40 @@ def forkable_agent(pane_id, env=None):
     session_id = session.get("value")
     if (session.get("kind") != "id" or not isinstance(session_id, str)
             or not session_id.strip()):
-        if kind == "claude":
-            raise MyHerdrError(
-                "herdr does not know this Claude session's id, so there is nothing to fork. "
-                "Start the session in this pane with `claude --resume <id>`, not through "
-                "Claude's background-sessions view, and make sure `herdr integration install "
-                "claude` has been run.")
-        raise MyHerdrError(
-            "herdr does not know this Codex session's id, so there is nothing to fork. "
-            "Start or resume the session in this pane with `codex` or `codex resume <id>`, "
-            "and make sure `herdr integration install codex` has been run.")
+        raise MyHerdrError(adapter.missing_session_message())
 
-    if kind == "claude":
-        saved = conversation_saved(session_id, env)
-        print("fork: %s runs claude session %s (saved conversation: %s, in %s)" % (
-            pane_id, session_id, {True: "yes", False: "no", None: "cannot tell"}[saved],
-            os.path.join(claude_config_dir(env), "projects")))
-        if saved is False:
-            # Avoid waiting through startup for a conversation Claude cannot load.
-            raise MyHerdrError(
-                "Claude has no saved conversation for this session yet, so there is nothing to "
-                "fork. Send it a message first. If it already has some, restart Claude in this "
-                "pane: herdr may still hold the id it had before a resume.")
-    else:
-        # Codex loads and validates its own saved conversation at startup.
-        print("fork: %s runs codex session %s" % (pane_id, session_id))
-    return agent
+    return adapter.validate_source(pane_id, agent, env)
+
+
+def prepare_fork(agent, name=None):
+    """Delegate preparation after source validation and before tab creation.
+
+    Args:
+        agent (dict): Source record returned by forkable_agent, including adapter
+            validation metadata such as OpenCode's authoritative directory.
+        name (str or None): Optional fork name; None or empty keeps default naming.
+
+    Returns:
+        dict: ``session_id`` (str) to launch and ``cwd`` (str or None) for the tab.
+        An optional ``recovery`` (str) is appended to later startup errors.
+        OpenCode saves its fork here; Claude/Codex defer creation to CLI startup.
+
+    Raises:
+        MyHerdrError: The kind is unsupported or agent-specific preparation fails.
+            Saved OpenCode forks are retained and mutations are never retried.
+    """
+    return get_adapter(agent["agent"]).prepare_fork(agent, name)
 
 
 def fork_args(kind, session_id, name=None):
     """Build the agent-specific arguments passed after herdr's ``--``.
 
     Args:
-        kind (str): Supported agent kind, "claude" or "codex".
-        session_id (str): Validated source session ID understood by the agent.
+        kind (str): Supported agent kind: "claude", "codex", or "opencode".
+        session_id (str): Source ID for Claude/Codex; already-created fork ID
+            for OpenCode, whose fork is created through its API beforehand.
         name (str or None): Optional saved-session name for Claude. None or an
-            empty string omits it. Codex ignores it because naming is tab-only.
+            empty string omits it. Codex ignores it; OpenCode is named via its API.
 
     Returns:
         list[str]: Agent argv preserving each value as a separate argument.
@@ -88,14 +113,7 @@ def fork_args(kind, session_id, name=None):
     Raises:
         MyHerdrError: The agent kind is unsupported.
     """
-    if kind == "codex":
-        return ["fork", session_id]
-    if kind == "claude":
-        args = ["--resume", session_id, "--fork-session"]
-        if name:
-            args += ["-n", name]
-        return args
-    raise MyHerdrError("cannot fork unsupported agent %s" % kind)
+    return get_adapter(kind).fork_args(session_id, name)
 
 
 def forwarded_env(kind, env=None):
@@ -105,63 +123,17 @@ def forwarded_env(kind, env=None):
     pane are not discovered by the plugin.
 
     Args:
-        kind (str): Supported agent kind, "claude" or "codex".
+        kind (str): Supported agent kind: "claude", "codex", or "opencode".
         env (Mapping[str, str] or None): Environment to read; None uses
             os.environ. An empty mapping forwards nothing.
 
     Returns:
         dict[str, str]: CLAUDE_CONFIG_DIR for Claude or CODEX_HOME for Codex,
-            when nonempty in env; otherwise an empty dict.
+            when nonempty in env; otherwise an empty dict. OpenCode uses its
+            shared service and the inherited herdr server environment, with
+            no extra variables placed in logged --env arguments.
 
     Raises:
         MyHerdrError: The agent kind is unsupported.
     """
-    env = os.environ if env is None else env
-    if kind == "claude":
-        key = "CLAUDE_CONFIG_DIR"
-    elif kind == "codex":
-        key = "CODEX_HOME"
-    else:
-        raise MyHerdrError("cannot fork unsupported agent %s" % kind)
-    return {key: env[key]} if env.get(key) else {}
-
-
-def conversation_saved(session_id, env=None):
-    """Whether Claude has the conversation `--resume <session_id>` would load.
-
-    Args:
-        session_id (str): Claude session ID to look for under
-            ``<config>/projects/*/<id>.jsonl``. Glob characters are literal.
-        env (Mapping[str, str] or None): Environment used to resolve Claude's
-            configuration directory. None uses os.environ.
-
-    Returns:
-        bool or None: True if a matching transcript exists, False if the
-            projects directory exists but has no match, or None if that
-            directory is unavailable. Callers must not refuse on None.
-    """
-    projects = os.path.join(claude_config_dir(env), "projects")
-    if not os.path.isdir(projects):
-        return None
-    pattern = os.path.join(glob.escape(projects), "*", glob.escape(session_id) + ".jsonl")
-    return bool(glob.glob(pattern))
-
-
-def claude_config_dir(env=None):
-    """Resolve the configuration directory used for Claude's transcript check.
-
-    Args:
-        env (Mapping[str, str] or None): Environment containing optional
-            CLAUDE_CONFIG_DIR and HOME values. None uses os.environ.
-
-    Returns:
-        str: Nonempty CLAUDE_CONFIG_DIR with a leading tilde expanded, otherwise
-            ``<HOME>/.claude``. Missing HOME falls back to os.path.expanduser.
-            Tilde expansion uses the process environment, not the supplied env.
-    """
-    env = os.environ if env is None else env
-    configured = env.get("CLAUDE_CONFIG_DIR")
-    if configured:
-        return os.path.expanduser(configured)
-    home = env.get("HOME") or os.path.expanduser("~")
-    return os.path.join(home, ".claude")
+    return get_adapter(kind).forwarded_env(env)

@@ -1,0 +1,62 @@
+#!/usr/bin/env python3
+"""Strict fake OpenCode V2 CLI; never connects to a service.
+
+OPENCODE_MOCK_LOG records argv as JSON lines. OPENCODE_MOCK_FAIL fails a command
+prefix. OPENCODE_MOCK_VERSION / OPENCODE_MOCK_SERVER_VERSION override versions.
+OPENCODE_MOCK_MATCH selects a command prefix for raw OPENCODE_MOCK_RESPONSE output.
+"""
+import json
+import os
+import sys
+from urllib.parse import unquote
+
+
+def main(argv):
+    """Serve known V2 commands and fail loudly on unexpected commands.
+
+    Args:
+        argv (list[str]): CLI arguments without the executable name.
+
+    Returns:
+        int: 0 for supported commands, 1 for injected failures, 2 for unknown calls.
+
+    Raises:
+        OSError: The isolated command log cannot be written.
+    """
+    log = os.environ.get("OPENCODE_MOCK_LOG")
+    if log:
+        with open(log, "a") as handle:
+            handle.write(json.dumps(argv) + "\n")
+    command = " ".join(argv)
+    failure = os.environ.get("OPENCODE_MOCK_FAIL")
+    if failure and command.startswith(failure):
+        print('{"_tag":"SessionNotFoundError","message":"private failure text"}')
+        print("HTTP 404 Not Found", file=sys.stderr)
+        return 1
+    match = os.environ.get("OPENCODE_MOCK_MATCH")
+    if match and command.startswith(match):
+        print(os.environ.get("OPENCODE_MOCK_RESPONSE", ""))
+        return 0
+    if argv == ["--version"]:
+        print(os.environ.get("OPENCODE_MOCK_VERSION", "opencode v2.0.32"))
+        return 0
+    if argv == ["api", "get", "/api/info"]:
+        print(json.dumps({"version": os.environ.get("OPENCODE_MOCK_SERVER_VERSION", "2.0.32")}))
+        return 0
+    if len(argv) == 3 and argv[:2] == ["api", "get"] and argv[2].startswith("/api/session/"):
+        print(json.dumps({"data": {"id": unquote(argv[2].removeprefix("/api/session/")),
+                                  "location": {"directory": "/home/user/opencode-project"}}}))
+        return 0
+    if (len(argv) == 5 and argv[:2] == ["api", "post"]
+            and argv[2].endswith("/fork") and argv[3:] == ["--data", "{}"]):
+        print('{"data":{"id":"ses_fork"}}')
+        return 0
+    if len(argv) == 5 and argv[:3] == ["api", "patch", "/api/session/ses_fork"]:
+        if argv[3] == "--data" and set(json.loads(argv[4])) == {"title"}:
+            return 0  # V2 session.update returns 204 with no JSON.
+    print("unexpected mock OpenCode command", file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

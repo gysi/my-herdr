@@ -1,4 +1,4 @@
-"""Ask for a tab name, then fork this pane's Claude Code or Codex session into a new tab.
+"""Ask for a tab name, then fork this pane's supported agent session into a new tab.
 
 The same fork as `fork-tab`, with a name, the way herdr's own new-tab asks for
 one. An action has no terminal, so the asking happens in the `fork-prompt`

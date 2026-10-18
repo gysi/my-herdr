@@ -41,6 +41,13 @@ and features must not import the dispatcher or each other. Keep `__init__.py` fi
 Add shared abstractions for concrete reuse, and keep small features in one implementation file.
 The terminal line editor belongs to forking; common herdr operations belong to the CLI wrapper.
 
+Forking selects the `claude.py`, `codex.py`, or `opencode.py` adapter through one registry in
+`myherdr/forking/agents.py`. Adapters own agent-specific validation, missing-session guidance,
+fork preparation, launch arguments, and forwarded environment. Shared pane/session metadata
+checks stay in `agents.py`; tab creation, readiness, focus, and cleanup stay in `workflow.py`.
+Source validation does not create a fork. OpenCode preparation saves its fork before tab creation;
+Claude Code and Codex create their forks when the agent CLI starts.
+
 Tests mirror feature ownership. Common fixtures, the mock CLI, and `tests/support.py` stay
 central. Run all tests with `python3 -m unittest discover -s tests -t .`, or a feature with
 `python3 -m unittest discover -s tests/attention -t .`. Package imports use `tests.*` so
@@ -50,10 +57,11 @@ See [AGENTS.md](../AGENTS.md#layout) for the layout and entrypoint-adding checkl
 
 ## Active plans
 
-None.
+- `UNWRAP`: [Unwrap hard-wrapped Markdown prose](plans/2026-10-18-UNWRAP-unwrap-markdown-prose.md). Planned; a separate docs-only change.
 
 ## Completed plans
 
+- `OFORK`: [OpenCode fork support](plans/2026-10-17-OFORK-opencode-fork-support.md). Automated checks passed; live smoke tests confirmed named/unnamed forks, distinct session identity, source independence, and attention navigation.
 - `APEND`: [Preserve pending attention until visited](plans/2026-09-24-APEND-pending-attention.md).
   Unvisited waiting states retain urgency; all 296 tests and local checks passed.
 - `MOD`: [Feature packages](plans/2026-09-24-MOD-feature-packages.md).
@@ -132,17 +140,12 @@ git log --fixed-strings --grep='(CFORK):'
 
 ## Future ideas
 
-These are possibilities, not implementation commitments. Give an idea its own plan when it becomes
-concrete.
+These are possibilities, not implementation commitments. Give an idea its own plan when it becomes concrete.
 
 - `fork-pane`: fork into a split pane instead of a tab (right/down variants).
-- Shell entry point (`bin/cfork` or `my-herdr fork <name> [prompt]`) so a `cfork`-style shell workflow
-  can use the plugin code.
+- Shell entry point (`bin/cfork` or `my-herdr fork <name> [prompt]`) so a `cfork`-style shell workflow can use the plugin code.
 - `pane-to-tab (ask)`: popup asks for the new tab's name.
-- `attention-pick`: popup listing every waiting agent (state icon, workspace/tab, title), pick with
-  `1`-`9`, then focus. Shares the popup machinery with `fork-tab-ask`. A popup does not take tiled
-  focus, so focusing from inside it sticks when it closes (seen with `fork-tab-ask`).
-- `attention-status`: sidebar/status line token or a `notification show` summary of how many agents
-  are blocked vs finished-unread.
+- `attention-pick`: popup listing every waiting agent (state icon, workspace/tab, title), pick with `1`-`9`, then focus. Shares the popup machinery with `fork-tab-ask`. A popup does not take tiled focus, so focusing from inside it sticks when it closes (seen with `fork-tab-ask`).
+- `attention-status`: sidebar/status line token or a `notification show` summary of how many agents are blocked vs finished-unread.
 - `setup-keys` action that idempotently adds chosen keybindings (marker-guarded), opt-in only.
-- Forking agents beyond Claude Code and Codex.
+- Fork from an earlier message: branch the conversation before a chosen message instead of copying all of it, for example to retry the last prompt differently. OpenCode's fork API accepts a `before` message ID; it needs a way to pick the message (such as a popup of recent prompts). Claude Code has no flag for this; Codex is unchecked.

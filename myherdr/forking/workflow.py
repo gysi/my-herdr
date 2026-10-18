@@ -1,4 +1,4 @@
-"""Fork the Claude Code or Codex session of a pane into a new tab.
+"""Fork a supported agent session of a pane into a new tab.
 
 The fork starts with the full conversation of the original and is otherwise
 independent: the source session keeps running and is not touched.
@@ -38,13 +38,13 @@ SHELL_TIMEOUT = 10.0
 
 
 def fork_into_new_tab(pane_id, name=None, env=None):
-    """Fork a pane's Claude Code or Codex session into a new, focused tab.
+    """Fork a pane's supported agent session into a new, focused tab.
 
     Args:
         pane_id (str): Source herdr pane ID, such as ``w1:p1``. Its current
             agent supplies the session ID, workspace, and working directory.
         name (str or None): Optional tab label, also used as the saved session
-            name for Claude. None or an empty string keeps default naming.
+            name for Claude/OpenCode. None or an empty string keeps default naming.
         env (Mapping[str, str] or None): Environment used to resolve Claude's
             store and select configuration variables to forward to the tab.
             None uses os.environ; an empty mapping supplies no overrides.
@@ -58,18 +58,49 @@ def fork_into_new_tab(pane_id, name=None, env=None):
         MyHerdrError: Source validation, tab creation, shell readiness, or
             agent startup failed. After creation, cleanup attempts to close
             the new tab and restore source focus before propagating errors.
+            OpenCode saves the fork before creating the tab and keeps it on
+            subsequent failures; the error says how to resume it.
     """
     agent = agents.forkable_agent(pane_id, env)
     kind = agent["agent"]
-    session_id = agent["agent_session"]["value"]
-    cwd = agent.get("foreground_cwd") or agent.get("cwd")
     workspace_id = agent.get("workspace_id") or pane_id.split(":")[0]
+    prepared = agents.prepare_fork(agent, name)
+    try:
+        return start_in_new_tab(pane_id, workspace_id, kind, prepared, name, env)
+    except MyHerdrError as exc:
+        recovery = prepared.get("recovery")
+        if not recovery:
+            raise
+        raise MyHerdrError("%s. %s" % (str(exc).rstrip("."), recovery), exc.code) from exc
+
+
+def start_in_new_tab(source_pane_id, workspace_id, kind, prepared, name=None, env=None):
+    """Create the fork's focused tab and start the agent in it.
+
+    Args:
+        source_pane_id (str): Pane to focus again if the fork does not start.
+        workspace_id (str): Workspace in which to create the tab.
+        kind (str): Supported agent kind selecting launch arguments and environment.
+        prepared (dict): Result of agents.prepare_fork with ``session_id`` and ``cwd``.
+        name (str or None): Optional tab label and agent name; None or empty omits it.
+        env (Mapping[str, str] or None): Environment from which to forward the
+            agent's configuration override. None uses os.environ.
+
+    Returns:
+        dict: ``tab_id`` (str or None) and ``pane_id`` (str) for the new tab and pane.
+
+    Raises:
+        MyHerdrError: Tab creation, shell readiness, or agent startup failed. A
+            created tab is closed and source focus restored before propagating.
+    """
+    session_id = prepared["session_id"]
+    cwd = prepared["cwd"]
 
     created = herdr.run_json(*tab_create_args(workspace_id, cwd, name, env, kind=kind))
     tab_id = (created.get("tab") or {}).get("tab_id")
     new_pane = (created.get("root_pane") or {}).get("pane_id")
     if not new_pane:
-        abandon(tab_id, pane_id)
+        abandon(tab_id, source_pane_id)
         raise MyHerdrError("herdr created a tab but reported no pane to start the fork in")
 
     try:
@@ -81,7 +112,7 @@ def fork_into_new_tab(pane_id, name=None, env=None):
     except BaseException:
         # Including the interrupt: a tab holding a fork that never started is
         # worse than no tab, and nobody asked for an empty shell.
-        abandon(tab_id, pane_id)
+        abandon(tab_id, source_pane_id)
         raise
 
     # The throwaway name was only needed because `agent start` requires one;
@@ -100,8 +131,8 @@ def tab_create_args(workspace_id, cwd, name=None, env=None, kind="claude"):
         name (str or None): Optional tab label; None or an empty string omits it.
         env (Mapping[str, str] or None): Environment from which to select the
             agent's configuration override. None uses os.environ.
-        kind (str): Agent kind, "claude" (default) or "codex", which selects
-            CLAUDE_CONFIG_DIR or CODEX_HOME for forwarding.
+        kind (str): Agent kind, "claude" (default), "codex", or "opencode".
+            Selects the agent's configuration variables, if any, for forwarding.
 
     Returns:
         list[str]: herdr arguments, excluding the executable, with --focus.
@@ -125,10 +156,11 @@ def agent_start_args(pane_id, session_id, name=None, kind="claude"):
 
     Args:
         pane_id (str): Destination pane ID; its shell must be ready at launch.
-        session_id (str): Source agent's native session ID to fork.
+        session_id (str): Source native ID for Claude/Codex, or the newly
+            created fork ID for OpenCode.
         name (str or None): Optional saved-session name for Claude. None or an
-            empty string omits it; Codex ignores it.
-        kind (str): Agent kind, "claude" (default) or "codex".
+            empty string omits it; Codex/OpenCode ignore it at launch.
+        kind (str): Agent kind, "claude" (default), "codex", or "opencode".
 
     Returns:
         list[str]: herdr arguments, excluding the executable, including a

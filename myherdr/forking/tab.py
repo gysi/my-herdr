@@ -1,4 +1,4 @@
-"""Fork this pane's Claude Code or Codex session into a new tab.
+"""Fork this pane's Claude Code, Codex or OpenCode session into a new tab.
 
 For the moment you want to try something without losing where you are: the new
 tab starts from the same conversation, and the session you forked from carries
