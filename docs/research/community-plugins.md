@@ -1,13 +1,8 @@
 # Community herdr plugins: how they are built
 
-> **Reference snapshot — recorded 2026-09-21.** A survey of other people's plugins, not a
-> continuously maintained reference. The date identifies the original snapshot, not the last
-> edit. Targeted corrections are welcome and do not change it; update it only after a full
-> re-survey. Check the source repository before relying on a claim.
+> **Reference snapshot — recorded 2026-09-21.** A survey of other people's plugins, not a continuously maintained reference. The date identifies the original snapshot, not the last edit. Targeted corrections are welcome and do not change it; update it only after a full re-survey. Check the source repository before relying on a claim.
 
-Research note from building **my-herdr**. The original recommendations for this plugin are
-preserved in the [initial development plan](../plans/initial-development.md#original-recommendations)
-as historical design material. This file covers the surveyed plugins and observed patterns.
+Research note from building **my-herdr**. The original recommendations for this plugin are preserved in the [initial development plan](../plans/initial-development.md#original-recommendations) as historical design material. This file covers the surveyed plugins and observed patterns.
 
 - Checked against herdr **0.9.1**. Dependencies mentioned below belong to the surveyed plugins.
 - Sources: shallow clones of the repos in §1, the official docs at https://herdr.dev/docs/plugins/ and https://herdr.dev/docs/marketplace/, and `herdr <cmd> --help` on 0.9.0.
@@ -495,8 +490,7 @@ prompt_line() {
 }
 ```
 
-Version-bump warning job (same repo, `.github/workflows/tests.yml`, MIT). The initial
-[testing recommendations](../plans/initial-development.md#a8-testing-approach) adapt its paths.
+Version-bump warning job (same repo, `.github/workflows/tests.yml`, MIT). The initial [testing recommendations](../plans/initial-development.md#a8-testing-approach) adapt its paths.
 
 ```yaml
       - name: Warn when shipped files change without a version bump

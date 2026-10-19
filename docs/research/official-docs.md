@@ -1,13 +1,8 @@
 # herdr plugin authoring: reference notes from the official docs
 
-> **Reference snapshot — recorded 2026-09-21, targeting herdr 0.9.1.** This is not updated in
-> step with herdr releases. The date identifies the original snapshot, not the last edit.
-> Targeted corrections are welcome and do not change it; update it only after a full review of
-> the contract. **herdr's own documentation and the live `herdr` CLI always win**; when they
-> disagree with this file, fix the file.
+> **Reference snapshot — recorded 2026-09-21, targeting herdr 0.9.1.** This is not updated in step with herdr releases. The date identifies the original snapshot, not the last edit. Targeted corrections are welcome and do not change it; update it only after a full review of the contract. **herdr's own documentation and the live `herdr` CLI always win**; when they disagree with this file, fix the file.
 
-The herdr plugin contract as `my-herdr` relies on it. Unless a targeted note specifies additional
-verified versions, this describes **herdr 0.9.1** (protocol 22), the version this plugin targets.
+The herdr plugin contract as `my-herdr` relies on it. Unless a targeted note specifies additional verified versions, this describes **herdr 0.9.1** (protocol 22), the version this plugin targets.
 
 - **[docs]** or unmarked: from the official documentation pages linked below, summarized in our own words; quotation marks mark the few places where herdr's exact wording is kept.
 - **[src]**: read from the herdr source, at the paths listed below.
@@ -273,13 +268,7 @@ Link handlers also receive matching OSC 8 `file://` clicks.
 
 ### 2.9 The `my-herdr` manifest
 
-`herdr-plugin.toml` at the repo root applies the rules above; read it rather than a copy here. The
-choices that follow from this section: a lowercase, dot-free `id`; `min_herdr_version = "0.9.1"`;
-`platforms = ["linux", "macos"]`; every action as `["python3", "bin/my-herdr", "<id>"]` (argv,
-relative to the plugin root, no shell); and the one popup, `fork-prompt`, as
-`["sh", "-c", "exec \"$HERDR_PLUGIN_ROOT/bin/my-herdr\" pane fork-prompt"]`, because a pane's
-working directory is not necessarily the plugin root and `sh -c` is only there to expand the
-variable. `tests/check_manifest.py` checks these rules offline.
+`herdr-plugin.toml` at the repo root applies the rules above; read it rather than a copy here. The choices that follow from this section: a lowercase, dot-free `id`; `min_herdr_version = "0.9.1"`; `platforms = ["linux", "macos"]`; every action as `["python3", "bin/my-herdr", "<id>"]` (argv, relative to the plugin root, no shell); and the one popup, `fork-prompt`, as `["sh", "-c", "exec \"$HERDR_PLUGIN_ROOT/bin/my-herdr\" pane fork-prompt"]`, because a pane's working directory is not necessarily the plugin root and `sh -c` is only there to expand the variable. `tests/check_manifest.py` checks these rules offline.
 
 ---
 
@@ -517,22 +506,10 @@ Validation rules and defaults **[src `plugins/mod.rs`, `panes.rs`]**:
 
 Built from the documented pieces and verified live on 0.9.1.
 
-1. The action (`fork-tab-ask`, headless) validates first, so a refusal is a toast before anything
-   is typed, then opens the popup with `plugin pane open --plugin my-herdr --entrypoint
-   fork-prompt --env MH_SOURCE_PANE=<pane>`. Only the pane is passed; everything else is re-read
-   from herdr later.
-2. The popup asks for the input. Esc reaches the popup process, but `input()` cannot see it (the
-   terminal only echoes `^[`), so the popup reads keys itself in cbreak mode; Esc, Ctrl-C and
-   Ctrl-D cancel with exit 0. On error it prints the message and waits for Enter, since the popup
-   closes the moment its process exits.
-3. **The popup does not do the slow work.** It stays on screen until its process exits, and a fork
-   waits for the agent to come up, so doing it in place would cover the new tab for that whole time.
-   Starting the work as a detached process would hide it from herdr: no plugin log, no action
-   environment.
-4. Instead the popup writes its input to a file in `$HERDR_PLUGIN_STATE_DIR` and runs
-   `plugin action invoke my-herdr.fork-tab`, which returns as soon as herdr has started the action
-   (§3.1), then exits. The file is necessary because actions take no parameters (§4). Invoking an
-   action from a popup works as long as that action opens no UI of its own.
+1. The action (`fork-tab-ask`, headless) validates first, so a refusal is a toast before anything is typed, then opens the popup with `plugin pane open --plugin my-herdr --entrypoint fork-prompt --env MH_SOURCE_PANE=<pane>`. Only the pane is passed; everything else is re-read from herdr later.
+2. The popup asks for the input. Esc reaches the popup process, but `input()` cannot see it (the terminal only echoes `^[`), so the popup reads keys itself in cbreak mode; Esc, Ctrl-C and Ctrl-D cancel with exit 0. On error it prints the message and waits for Enter, since the popup closes the moment its process exits.
+3. **The popup does not do the slow work.** It stays on screen until its process exits, and a fork waits for the agent to come up, so doing it in place would cover the new tab for that whole time. Starting the work as a detached process would hide it from herdr: no plugin log, no action environment.
+4. Instead the popup writes its input to a file in `$HERDR_PLUGIN_STATE_DIR` and runs `plugin action invoke my-herdr.fork-tab`, which returns as soon as herdr has started the action (§3.1), then exits. The file is necessary because actions take no parameters (§4). Invoking an action from a popup works as long as that action opens no UI of its own.
 
 Alternative that skips the action and plugin env: a plain `[[keys.command]] type = "popup"` whose `command` runs the script directly. It gets `HERDR_ACTIVE_PANE_ID` and similar. That works too, but lives outside the plugin system: no plugin logs, no plugin env, and the command string runs through `/bin/sh -c`.
 
@@ -764,16 +741,7 @@ herdr agent start <name> --kind KIND --pane ID [--timeout MS] [-- <agent-args...
 
 `agent_session` ([socket API page][socket-api]): `pane.get`, `pane.list`, `agent.get` and `agent.list` include a read-only `agent_session` object when herdr has stored a native session reference for the agent, and omit the field otherwise.
 
-Both fork actions require a nonempty string session ID of kind `id` and reject a session's
-explicit agent field when it conflicts with the pane's agent. `myherdr/forking/agents.py` owns
-these shared checks and selects the Claude Code, Codex, or OpenCode adapter through one registry.
-Each adapter owns missing-session guidance, source validation/logging, fork preparation, CLI
-arguments, and environment selection. Validation does not create a fork; preparation saves an
-OpenCode fork before tab creation, while Claude/Codex create theirs at CLI startup.
-`myherdr/forking/workflow.py` shares tab creation, focus, shell readiness, startup,
-temporary-name clearing, and cleanup across all agents. The adapters forward `CODEX_HOME` for
-Codex and `CLAUDE_CONFIG_DIR` for Claude from the action environment, inherited from the herdr
-server; overrides set only in the source shell are not discovered.
+Both fork actions require a nonempty string session ID of kind `id` and reject a session's explicit agent field when it conflicts with the pane's agent. `myherdr/forking/agents.py` owns these shared checks and selects the Claude Code, Codex, or OpenCode adapter through one registry. Each adapter owns missing-session guidance, source validation/logging, fork preparation, CLI arguments, and environment selection. Validation does not create a fork; preparation saves an OpenCode fork before tab creation, while Claude/Codex create theirs at CLI startup. `myherdr/forking/workflow.py` shares tab creation, focus, shell readiness, startup, temporary-name clearing, and cleanup across all agents. The adapters forward `CODEX_HOME` for Codex and `CLAUDE_CONFIG_DIR` for Claude from the action environment, inherited from the herdr server; overrides set only in the source shell are not discovered.
 
 **`agent start` as an alternative to `pane run`** ([CLI reference][cli-reference]):
 
@@ -782,8 +750,7 @@ server; overrides set only in the source shell are not discovered.
 - `--kind` picks herdr's canonical interactive executable for that agent; arguments after `--` go to that executable.
 - It returns success only once the expected agent owns that same terminal and is ready for interactive input. The default startup timeout is 30000 ms.
 
-This waits for the new shell to be ready, which `pane run` does not. The catch is the
-herdr agent-name regex and uniqueness requirement.
+This waits for the new shell to be ready, which `pane run` does not. The catch is the herdr agent-name regex and uniqueness requirement.
 
 #### 7.4.1 Claude Code
 
@@ -826,15 +793,7 @@ A Claude conversation is saved as `<claude config>/projects/<project dir>/<sessi
 
 So `jq -r '.result.agent.agent_session.value'` gives the Claude session id. `kind` is `"id"` or `"path"`, depending on the agent. For a pane with no detected agent, `agent get <pane>` returns an error; handle a non-zero exit.
 
-**GOTCHA [local]: the id can lag behind the conversation on screen.** A resume **can** carry the
-conversation into a **new** session id, leaving a `{"type": "continued-in", "continuedInSessionId":
-...}` record at the end of the old transcript (`~/.claude/projects/<cwd-slug>/<id>.jsonl`): seen
-when herdr restored a pane with `claude --resume <id>`. It does not always: resuming a stopped
-background session with `claude -r` kept its id. What decides it is not known. Where herdr still
-holds the old id, `agent_session.value` names a transcript that stops before the latest turns.
-Separately, `claude --resume <id>` on a session still open in another process can load a
-**discarded branch** left by a rewind: the transcript keeps both branches, and Claude (2.1.278) has
-no flag to resume at a given message. A fork is only as current as those two allow.
+**GOTCHA [local]: the id can lag behind the conversation on screen.** A resume **can** carry the conversation into a **new** session id, leaving a `{"type": "continued-in", "continuedInSessionId": ...}` record at the end of the old transcript (`~/.claude/projects/<cwd-slug>/<id>.jsonl`): seen when herdr restored a pane with `claude --resume <id>`. It does not always: resuming a stopped background session with `claude -r` kept its id. What decides it is not known. Where herdr still holds the old id, `agent_session.value` names a transcript that stops before the latest turns. Separately, `claude --resume <id>` on a session still open in another process can load a **discarded branch** left by a rewind: the transcript keeps both branches, and Claude (2.1.278) has no flag to resume at a given message. A fork is only as current as those two allow.
 
 `my-herdr` starts a named Claude fork with:
 
@@ -842,65 +801,32 @@ no flag to resume at a given message. A fork is only as current as those two all
 herdr agent start <name> --kind claude --pane "$new_pane" --timeout 60000 -- --resume "$sid" --fork-session -n "$label"
 ```
 
-Whether `--kind claude` launches `claude` from PATH exactly as the user's shell would is
-not documented.
+Whether `--kind claude` launches `claude` from PATH exactly as the user's shell would is not documented.
 
 #### 7.4.2 Codex
 
-Sources: local CLI help and official Codex docs. herdr 0.9.1 accepts `codex` for
-`agent start --kind` and `integration install`. Codex panes can report
-`agent_session = {agent: "codex", kind: "id", source: "herdr:codex", value: "<session-id>"}`.
-Install `herdr integration install codex`, then start or resume Codex in the pane so herdr can
-learn its session ID.
+Sources: local CLI help and official Codex docs. herdr 0.9.1 accepts `codex` for `agent start --kind` and `integration install`. Codex panes can report `agent_session = {agent: "codex", kind: "id", source: "herdr:codex", value: "<session-id>"}`. Install `herdr integration install codex`, then start or resume Codex in the pane so herdr can learn its session ID.
 
-The installed `codex fork --help` accepts a session UUID and an optional prompt, with no
-session-name flag. The [official Codex CLI reference](https://learn.chatgpt.com/docs/developer-commands?surface=cli#codex-fork)
-describes a fork as a new chat preserving the original transcript. `my-herdr` launches:
+The installed `codex fork --help` accepts a session UUID and an optional prompt, with no session-name flag. The [official Codex CLI reference](https://learn.chatgpt.com/docs/developer-commands?surface=cli#codex-fork) describes a fork as a new chat preserving the original transcript. `my-herdr` launches:
 
 ```text
 herdr agent start <temporary-name> --kind codex --pane <new-pane> --timeout 60000 -- fork <session-id>
 ```
 
-The name from the popup labels only the herdr tab for Codex; neither a name nor an initial prompt
-is passed to Codex. Codex loads and validates its saved conversation itself. The plugin performs
-no Codex transcript search or storage precheck, so a missing conversation can remain visible in
-the new tab until startup times out and cleanup closes it.
+The name from the popup labels only the herdr tab for Codex; neither a name nor an initial prompt is passed to Codex. Codex loads and validates its saved conversation itself. The plugin performs no Codex transcript search or storage precheck, so a missing conversation can remain visible in the new tab until startup times out and cleanup closes it.
 
 #### 7.4.3 OpenCode
 
-Sources: [herdr integrations][integrations], [OpenCode V2 CLI](https://opencode.ai/v2/docs/cli),
-[V2 API](https://opencode.ai/v2/docs/api), and [OpenAPI](https://opencode.ai/v2/openapi.json).
-Targeted contract verification uses local `opencode v2.0.32` and `herdr 0.9.5` help/version output;
-no live session mutation is part of this verification. The plugin's minimum herdr remains 0.9.1.
+Sources: [herdr integrations][integrations], [OpenCode V2 CLI](https://opencode.ai/v2/docs/cli), [V2 API](https://opencode.ai/v2/docs/api), and [OpenAPI](https://opencode.ai/v2/openapi.json). Targeted contract verification uses local `opencode v2.0.32` and `herdr 0.9.5` help/version output; no live session mutation is part of this verification. The plugin's minimum herdr remains 0.9.1.
 
-- herdr supports `integration install opencode` and `agent start --kind opencode`. Its integration
-  reports the TUI's selected session ID and lifecycle state. V2 reporting is pane-local even when
-  panes share one server. Mini and headless clients do not load that TUI integration.
-- my-herdr tests and maintains compatibility with the latest agent releases. Older versions
-  may still work, but are not tested or actively supported. Its current OpenCode implementation
-  uses the V2 API. Check `opencode --version` and
-  `opencode api get /api/info` → `.version` before mutations; unknown versions or API generations
-  older than V2 are refused. This guard does not check release freshness or promise long-term
-  support for any major version.
-- `opencode api <method> <path> [--data <json>]` performs normal service discovery and
-  authentication. It prints the raw HTTP response body, not a herdr-style result envelope.
-  HTTP errors print a body to stdout, `HTTP <status>` to stderr, and exit nonzero. Command
-  failures must therefore check exit status before parsing or trusting the body.
-- `GET /api/session/<id>` returns `{"data":{"id":"<id>","location":{"directory":"<absolute-path>"},…}}`.
-  Use that location for the new tab. Encode IDs as single path components.
-- `POST /api/session/<id>/fork` with `{}` copies the full projected history into an independent
-  child session. The response is `{"data":{"id":"<new-id>",…}}`; require a distinct nonempty ID.
-  `PATCH /api/session/<new-id>` with `{"title":"<name>"}` names only the fork and returns HTTP
-  204 with no response body. No prompt or permission override is sent.
-- The full-screen V2 CLI accepts `--session <id>` but has no root `--fork` flag. `agent start`
-  must receive the newly created ID, never the source ID. OpenCode APIs are called from the
-  headless action, not the naming popup; that action revalidates the selected session.
-- my-herdr supports the ordinary shared-service connection and inherited herdr server environment.
-  Source CLI `--server`/`--standalone`, private-service defaults, and shell-only environment
-  overrides are not discovered. Do not read credential files or put passwords/inline config
-  in logged tab argv. `opencode api` can start the normal service when needed.
-- A saved fork is logged and retained if naming, tab creation, or startup fails. Do not delete
-  sessions during rollback or retry uncertain API mutations: a timeout may occur after saving.
+- herdr supports `integration install opencode` and `agent start --kind opencode`. Its integration reports the TUI's selected session ID and lifecycle state. V2 reporting is pane-local even when panes share one server. Mini and headless clients do not load that TUI integration.
+- my-herdr tests and maintains compatibility with the latest agent releases. Older versions may still work, but are not tested or actively supported. Its current OpenCode implementation uses the V2 API. Check `opencode --version` and `opencode api get /api/info` → `.version` before mutations; unknown versions or API generations older than V2 are refused. This guard does not check release freshness or promise long-term support for any major version.
+- `opencode api <method> <path> [--data <json>]` performs normal service discovery and authentication. It prints the raw HTTP response body, not a herdr-style result envelope. HTTP errors print a body to stdout, `HTTP <status>` to stderr, and exit nonzero. Command failures must therefore check exit status before parsing or trusting the body.
+- `GET /api/session/<id>` returns `{"data":{"id":"<id>","location":{"directory":"<absolute-path>"},…}}`. Use that location for the new tab. Encode IDs as single path components.
+- `POST /api/session/<id>/fork` with `{}` copies the full projected history into an independent child session. The response is `{"data":{"id":"<new-id>",…}}`; require a distinct nonempty ID. `PATCH /api/session/<new-id>` with `{"title":"<name>"}` names only the fork and returns HTTP 204 with no response body. No prompt or permission override is sent.
+- The full-screen V2 CLI accepts `--session <id>` but has no root `--fork` flag. `agent start` must receive the newly created ID, never the source ID. OpenCode APIs are called from the headless action, not the naming popup; that action revalidates the selected session.
+- my-herdr supports the ordinary shared-service connection and inherited herdr server environment. Source CLI `--server`/`--standalone`, private-service defaults, and shell-only environment overrides are not discovered. Do not read credential files or put passwords/inline config in logged tab argv. `opencode api` can start the normal service when needed.
+- A saved fork is logged and retained if naming, tab creation, or startup fails. Do not delete sessions during rollback or retry uncertain API mutations: a timeout may occur after saving.
 
 ---
 
@@ -1013,8 +939,7 @@ herdr pane current [--pane ID|--current]
 herdr pane get <pane_id>
 ```
 
-**GOTCHA [local]:** `pane get` takes the id **positionally**, while its neighbours `pane current` and
-`pane process-info` take `--pane ID`. `herdr pane get --pane w1:p1` is a usage error and exits 2.
+**GOTCHA [local]:** `pane get` takes the id **positionally**, while its neighbours `pane current` and `pane process-info` take `--pane ID`. `herdr pane get --pane w1:p1` is a usage error and exits 2.
 
 `pane.current` ([socket API page][socket-api]) returns one `PaneInfo`: the pane named by `caller_pane_id` if given, else the active focused pane. So these commands resolve the calling pane rather than whichever pane another client has focused.
 
@@ -1054,33 +979,13 @@ The matching event, `pane.agent_status_changed`, carries `pane_id`, `workspace_i
 
 #### Local sidebar ordering (herdr 0.9.1)
 
-**[src]** `agent list` collects workspaces in stored order, tabs in stored order, and panes in
-layout traversal order (`src/app/agents.rs`, `collect_agent_infos`). Do not sort public IDs to
-reconstruct this order: workspace/tab reordering and pane layout can disagree with ID order.
+**[src]** `agent list` collects workspaces in stored order, tabs in stored order, and panes in layout traversal order (`src/app/agents.rs`, `collect_agent_infos`). Do not sort public IDs to reconstruct this order: workspace/tab reordering and pane layout can disagree with ID order.
 
-The local client uses that base order for **grouped**. **Priority** uses a stable sort by descending
-status rank (`blocked`, `done`, `working`, `idle`, `unknown`), then descending `state_change_seq`.
-The client can override this with a custom agent view; its order is not part of the public
-`agent list`/`session snapshot` response. See
-[client sidebar source](https://raw.githubusercontent.com/herdrdev/herdr/v0.9.1/src/client/shell/agent_sidebar.rs).
+The local client uses that base order for **grouped**. **Priority** uses a stable sort by descending status rank (`blocked`, `done`, `working`, `idle`, `unknown`), then descending `state_change_seq`. The client can override this with a custom agent view; its order is not part of the public `agent list`/`session snapshot` response. See [client sidebar source](https://raw.githubusercontent.com/herdrdev/herdr/v0.9.1/src/client/shell/agent_sidebar.rs).
 
-The sort toggle is client-owned and persisted as `agent_panel_sort` (`spaces` or `priority`) in
-`<herdr state dir>/client-shell/local-<hash>.json`. The hash is FNV-1a over the UTF-8 **client** socket path,
-using offset `0xcbf29ce484222325`, multiplier `0x100000001b3`, wrapping at 64 bits and formatted
-as 16 lowercase hexadecimal digits. Plugins receive the **API** socket in `HERDR_SOCKET_PATH`:
-derive the client socket in the same parent directory as `<file stem>-client.sock`, removing the
-API filename's final extension. For example, `/run/herdr/test.sock` becomes
-`/run/herdr/test-client.sock`; `/run/herdr/custom-api` becomes `/run/herdr/custom-api-client.sock`.
-See [socket derivation source](https://raw.githubusercontent.com/herdrdev/herdr/v0.9.1/src/server/socket_paths.rs).
-Do not choose an arbitrary file from the directory. On Linux/macOS the state root is `$XDG_STATE_HOME/herdr`,
-otherwise `$HOME/.local/state/herdr`, otherwise the system temporary directory's `herdr-state`.
-See [preference source](https://raw.githubusercontent.com/herdrdev/herdr/v0.9.1/src/client/shell/preferences.rs).
+The sort toggle is client-owned and persisted as `agent_panel_sort` (`spaces` or `priority`) in `<herdr state dir>/client-shell/local-<hash>.json`. The hash is FNV-1a over the UTF-8 **client** socket path, using offset `0xcbf29ce484222325`, multiplier `0x100000001b3`, wrapping at 64 bits and formatted as 16 lowercase hexadecimal digits. Plugins receive the **API** socket in `HERDR_SOCKET_PATH`: derive the client socket in the same parent directory as `<file stem>-client.sock`, removing the API filename's final extension. For example, `/run/herdr/test.sock` becomes `/run/herdr/test-client.sock`; `/run/herdr/custom-api` becomes `/run/herdr/custom-api-client.sock`. See [socket derivation source](https://raw.githubusercontent.com/herdrdev/herdr/v0.9.1/src/server/socket_paths.rs). Do not choose an arbitrary file from the directory. On Linux/macOS the state root is `$XDG_STATE_HOME/herdr`, otherwise `$HOME/.local/state/herdr`, otherwise the system temporary directory's `herdr-state`. See [preference source](https://raw.githubusercontent.com/herdrdev/herdr/v0.9.1/src/client/shell/preferences.rs).
 
-Absent a saved override, the client uses `[ui].agent_panel_sort`, default `spaces`; `workspaces`
-is an accepted alias. Config is `$HERDR_CONFIG_PATH`, otherwise `$XDG_CONFIG_HOME/herdr/config.toml`,
-otherwise `$HOME/.config/herdr/config.toml` (temporary `herdr/config.toml` if HOME is absent).
-The public API does not report the invoking client's live sort selection. Reading saved files is
-an internal-format workaround for a local client, not a guarantee for remote or divergent clients.
+Absent a saved override, the client uses `[ui].agent_panel_sort`, default `spaces`; `workspaces` is an accepted alias. Config is `$HERDR_CONFIG_PATH`, otherwise `$XDG_CONFIG_HOME/herdr/config.toml`, otherwise `$HOME/.config/herdr/config.toml` (temporary `herdr/config.toml` if HOME is absent). The public API does not report the invoking client's live sort selection. Reading saved files is an internal-format workaround for a local client, not a guarantee for remote or divergent clients.
 
 ### 9.8 Notifications (useful for feedback from a TTY-less action)
 
@@ -1161,7 +1066,5 @@ Request and response shapes:
 21. **`agent_status = "done"` only exists while nobody has looked.** It is durable (measured: >24 minutes) for an unseen agent, but an agent that finishes in a pane you are watching goes straight to `idle` and never passes through `done`. There is no seen field to read instead. See §9.7.
 22. **The claude integration hook needs `HERDR_PANE_ID`.** Without it (a popup has none) the hook exits silently and herdr never learns the session id, even though Claude itself starts fine. See §7.4.
 23. **`pane get` takes its id positionally**, unlike `pane current` and `pane process-info`, which take `--pane ID`. `pane get --pane w1:p1` exits 2. See §9.6.
-24. **Claude's `agent_session.value` can be stale or resume a discarded branch.** A resume can move the
-    conversation to a new id, background sessions are never tied to a pane, and a rewind leaves a
-    branch that `--resume` may pick. See §7.4.
+24. **Claude's `agent_session.value` can be stale or resume a discarded branch.** A resume can move the conversation to a new id, background sessions are never tied to a pane, and a rewind leaves a branch that `--resume` may pick. See §7.4.
 25. **llms-full.txt inconsistency.** `https://herdr.dev/llms-full.txt` has an older landing-page blurb ("tag your repo to be listed when the marketplace launches"). The versioned `marketplace.mdx` says the marketplace is live at herdr.dev/plugins.

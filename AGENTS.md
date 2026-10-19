@@ -4,85 +4,39 @@ Guidance for AI coding agents (Claude Code, Codex, …) working in this reposito
 
 ## What this project is
 
-`my-herdr` is a **herdr plugin** that bundles small, independent customizations for
-[herdr](https://herdr.dev), the terminal workspace manager for AI coding agents. Each customization
-is a separate plugin **action** that users bind to a key in their own herdr config.
+`my-herdr` is a **herdr plugin** that bundles small, independent customizations for [herdr](https://herdr.dev), the terminal workspace manager for AI coding agents. Each customization is a separate plugin **action** that users bind to a key in their own herdr config.
 
 ## Read before writing code
 
-1. [docs/README.md](docs/README.md): documentation index and active plans. Read the plan relevant to
-   the requested task and work within its scope; do not pick unrelated unchecked tasks. Completed
-   plans are historical context, not a queue of work or a specification of current behavior.
-2. `docs/research/official-docs.md`: herdr plugin contract (manifest, env vars, popups,
-   keybindings, CLI JSON shapes) for herdr 0.9.1. **Authoritative.**
-3. `docs/research/community-plugins.md`: observations about other plugins, their patterns, and
-   pitfalls. The original my-herdr recommendations live in the initial development plan as
-   historical context. Use the survey for patterns, not as the spec.
+1. [docs/README.md](docs/README.md): documentation index and active plans. Read the plan relevant to the requested task and work within its scope; do not pick unrelated unchecked tasks. Completed plans are historical context, not a queue of work or a specification of current behavior.
+2. `docs/research/official-docs.md`: herdr plugin contract (manifest, env vars, popups, keybindings, CLI JSON shapes) for herdr 0.9.1. **Authoritative.**
+3. `docs/research/community-plugins.md`: observations about other plugins, their patterns, and pitfalls. The original my-herdr recommendations live in the initial development plan as historical context. Use the survey for patterns, not as the spec.
 
 If the research and the live `herdr` CLI disagree, trust the CLI, then update the research note.
 
 ## Tech stack and constraints
 
-- **Python 3, standard library only.** No pip packages, no venv, no build step: herdr runs
-  `["python3", …]` straight from the checkout. Plugin code must run on **Python 3.9+** (no `tomllib`,
-  no `match`, no `X | Y` annotations); only `tests/` may assume newer. Don't add runtime dependencies
-  (including `jq`, `fzf`, `gum`) without asking.
-- **No CI.** Everything runs locally through `make check`, including Ruff from the version
-  pinned in `mise.toml`. Ruff is a development tool, not a plugin dependency.
-  Don't add `.github/workflows/` or additional tools without asking.
-- Target the **current stable herdr, 0.9.1**; `min_herdr_version` matches it. Older releases are not
-  supported: `agent focus` and `pane move --focus` only move the attached client from 0.9.1 on. A
-  `min_herdr_version` above the running herdr is a hard load failure, so raise it only when the
-  target moves.
+- **Python 3, standard library only.** No pip packages, no venv, no build step: herdr runs `["python3", …]` straight from the checkout. Plugin code must run on **Python 3.9+** (no `tomllib`, no `match`, no `X | Y` annotations); only `tests/` may assume newer. Don't add runtime dependencies (including `jq`, `fzf`, `gum`) without asking.
+- **No CI.** Everything runs locally through `make check`, including Ruff from the version pinned in `mise.toml`. Ruff is a development tool, not a plugin dependency. Don't add `.github/workflows/` or additional tools without asking.
+- Target the **current stable herdr, 0.9.1**; `min_herdr_version` matches it. Older releases are not supported: `agent focus` and `pane move --focus` only move the attached client from 0.9.1 on. A `min_herdr_version` above the running herdr is a hard load failure, so raise it only when the target moves.
 - Linux first; don't break macOS on purpose.
-- Every herdr call goes through the wrapper in `myherdr/shared/herdr.py` (`run()` / `run_json()`), which
-  uses `HERDR_BIN_PATH` and argv lists, so tests can mock it and nothing needs shell quoting.
-- Use **Google-style docstrings** for functions you add or change: a short summary, an `Args:`
-  entry for every parameter except `self`/`cls`, and `Returns:` / `Raises:` where applicable.
-  Describe what each input means, its expected type when unannotated, and defaults or special
-  values such as `None`.
-  Document return shapes, relevant side effects, and caller-visible errors. Type names alone
-  do not explain a parameter's purpose. Ruff checks missing public docstrings and missing
-  parameter entries in existing `Args:` sections; review must still check missing sections,
-  private helpers, return/error documentation, and whether descriptions are meaningful.
-  Test helpers follow the same convention; descriptive `test_*` methods need no redundant docstring.
+- Every herdr call goes through the wrapper in `myherdr/shared/herdr.py` (`run()` / `run_json()`), which uses `HERDR_BIN_PATH` and argv lists, so tests can mock it and nothing needs shell quoting.
+- Use **Google-style docstrings** for functions you add or change: a short summary, an `Args:` entry for every parameter except `self`/`cls`, and `Returns:` / `Raises:` where applicable. Describe what each input means, its expected type when unannotated, and defaults or special values such as `None`. Document return shapes, relevant side effects, and caller-visible errors. Type names alone do not explain a parameter's purpose. Ruff checks missing public docstrings and missing parameter entries in existing `Args:` sections; review must still check missing sections, private helpers, return/error documentation, and whether descriptions are meaningful. Test helpers follow the same convention; descriptive `test_*` methods need no redundant docstring.
 
 ## Key facts that are easy to get wrong
 
-- **Actions run headless**: no TTY, cwd = plugin root, stdout/stderr go to
-  `herdr plugin log list --plugin my-herdr`. Interactive input needs a **popup plugin pane**
-  (`[[panes]] placement = "popup"`) opened by the action with `herdr plugin pane open --env ...`.
-- **Popups have no `HERDR_PANE_ID`.** Pass what the popup needs via `--env` (`fork-tab-ask` passes
-  only the source pane; everything else is re-read from herdr). Only one popup can be open at a time
-  (`ui_busy`). A popup stays on screen until its process exits, so it must not do slow work itself.
-- **Actions take no parameters.** `plugin action invoke` has no way to pass any, and the socket API's
-  invocation `context` has fixed fields. To hand data to an action, write it to a file in
-  `$HERDR_PLUGIN_STATE_DIR` first (see `myherdr/forking/request.py`: atomic, claimed once, expires).
-  Don't start plugin work as a detached process instead: herdr would not log it or see it.
+- **Actions run headless**: no TTY, cwd = plugin root, stdout/stderr go to `herdr plugin log list --plugin my-herdr`. Interactive input needs a **popup plugin pane** (`[[panes]] placement = "popup"`) opened by the action with `herdr plugin pane open --env ...`.
+- **Popups have no `HERDR_PANE_ID`.** Pass what the popup needs via `--env` (`fork-tab-ask` passes only the source pane; everything else is re-read from herdr). Only one popup can be open at a time (`ui_busy`). A popup stays on screen until its process exits, so it must not do slow work itself.
+- **Actions take no parameters.** `plugin action invoke` has no way to pass any, and the socket API's invocation `context` has fixed fields. To hand data to an action, write it to a file in `$HERDR_PLUGIN_STATE_DIR` first (see `myherdr/forking/request.py`: atomic, claimed once, expires). Don't start plugin work as a detached process instead: herdr would not log it or see it.
 - In pane commands, reference scripts via `$HERDR_PLUGIN_ROOT`, not relative paths.
 - Manifest commands are **argv arrays, no shell**. Action/pane ids must not contain dots.
-- Keybindings **cannot** be declared in the manifest. Document `[[keys.command]]` blocks
-  (`type = "plugin_action"`) in the README.
+- Keybindings **cannot** be declared in the manifest. Document `[[keys.command]]` blocks (`type = "plugin_action"`) in the README.
 - `pane move --new-tab` takes `--label` (not `--tab-label`). Check `.result.move_result.changed`.
-- Agent testing and maintenance target the **latest releases of Claude Code, Codex, and OpenCode**.
-  Older agent versions may still work, but are not tested or actively supported; do not add
-  legacy compatibility code. Exact versions in research and tests describe verified contracts,
-  not permanent support commitments. Do not reject an older version solely because it is not
-  the latest; reject it only when a known compatibility requirement is not met.
-- Fork actions support **Claude Code, Codex and OpenCode**. Read the session id from
-  `herdr agent get <pane>` → `.result.agent.agent_session.value`; require kind `id` and reject
-  conflicting session-agent metadata. The corresponding integration (`herdr integration install claude`,
-  `herdr integration install codex`, or `herdr integration install opencode`) must be installed
-  and the session started or resumed in the pane. Never install integrations automatically.
-- Codex launches with `fork <id>` and validates its own saved conversation; no transcript search
-  or storage precheck. A requested name labels only the herdr tab. Forward `CODEX_HOME` for Codex
-  and `CLAUDE_CONFIG_DIR` for Claude from the action environment; shell-only overrides are not
-  discovered.
+- Agent testing and maintenance target the **latest releases of Claude Code, Codex, and OpenCode**. Older agent versions may still work, but are not tested or actively supported; do not add legacy compatibility code. Exact versions in research and tests describe verified contracts, not permanent support commitments. Do not reject an older version solely because it is not the latest; reject it only when a known compatibility requirement is not met.
+- Fork actions support **Claude Code, Codex and OpenCode**. Read the session id from `herdr agent get <pane>` → `.result.agent.agent_session.value`; require kind `id` and reject conflicting session-agent metadata. The corresponding integration (`herdr integration install claude`, `herdr integration install codex`, or `herdr integration install opencode`) must be installed and the session started or resumed in the pane. Never install integrations automatically.
+- Codex launches with `fork <id>` and validates its own saved conversation; no transcript search or storage precheck. A requested name labels only the herdr tab. Forward `CODEX_HOME` for Codex and `CLAUDE_CONFIG_DIR` for Claude from the action environment; shell-only overrides are not discovered.
 - `myherdr/forking/opencode.py` checks OpenCode CLI and server versions and reads the source session through `opencode api`, saves a new fork, optionally titles it, then launches `--session <fork-id>`. Use the session's API-reported directory. Only normal shared-service connections are supported; source-shell overrides and custom `--server`/standalone connections are not discovered. Do not retry mutations or delete saved forks on startup failure; log their IDs. Never put passwords/inline config in tab argv.
-- herdr learns a Claude session id only when Claude **starts** in the pane.
-  **Background Claude sessions** (`claude --bg`, `claude agents`, switching sessions inside Claude)
-  run in Claude's daemon and are never tied to a pane: herdr shows their status (read from the
-  screen) but holds a wrong or no id. A saved conversation is `<claude config>/projects/*/<id>.jsonl`.
+- herdr learns a Claude session id only when Claude **starts** in the pane. **Background Claude sessions** (`claude --bg`, `claude agents`, switching sessions inside Claude) run in Claude's daemon and are never tied to a pane: herdr shows their status (read from the screen) but holds a wrong or no id. A saved conversation is `<claude config>/projects/*/<id>.jsonl`.
 - Toast failures with `herdr notification show`, because otherwise they're invisible.
 
 ## Layout
@@ -107,19 +61,11 @@ Makefile                 check / lint / test / syntax / manifest / link / logs
 docs/                    README.md (index), plans/, research/
 ```
 
-Features import their own modules and `shared`, never another feature or the dispatcher.
-Shared modules do not depend on features. Keep package `__init__.py` files free of eager
-feature imports. Feature-specific helpers stay with their feature until reuse is needed.
+Features import their own modules and `shared`, never another feature or the dispatcher. Shared modules do not depend on features. Keep package `__init__.py` files free of eager feature imports. Feature-specific helpers stay with their feature until reuse is needed.
 
-Forking uses one adapter registry in `myherdr/forking/agents.py`, with shared pane/session
-metadata checks there. `claude.py`, `codex.py`, and `opencode.py` own agent-specific guidance,
-validation/logging, preparation, launch arguments, and environment selection. Validation must
-not create forks; preparation may save an OpenCode fork before tab creation. Keep tab lifecycle
-and cleanup in `workflow.py`, without agent-kind branches or direct agent-module imports.
+Forking uses one adapter registry in `myherdr/forking/agents.py`, with shared pane/session metadata checks there. `claude.py`, `codex.py`, and `opencode.py` own agent-specific guidance, validation/logging, preparation, launch arguments, and environment selection. Validation must not create forks; preparation may save an OpenCode fork before tab creation. Keep tab lifecycle and cleanup in `workflow.py`, without agent-kind branches or direct agent-module imports.
 
-**Adding an action** = feature module with `main(args)` + `entrypoints.py` registry entry +
-`[[actions]]` block + feature test + README row. Pane entrypoints use the `panes` registry and
-`[[panes]]`. `tests/check_manifest.py` checks agreement in both directions and module existence.
+**Adding an action** = feature module with `main(args)` + `entrypoints.py` registry entry + `[[actions]]` block + feature test + README row. Pane entrypoints use the `panes` registry and `[[panes]]`. `tests/check_manifest.py` checks agreement in both directions and module existence.
 
 ## Commands
 
@@ -136,46 +82,24 @@ herdr plugin action invoke my-herdr.<action>
 herdr plugin log list --plugin my-herdr    # the only place action output goes
 ```
 
-`make syntax` must `py_compile` `bin/my-herdr`, `tests/mocks/herdr`, and `tests/mocks/opencode`
-by name: they have no `.py` extension, so `compileall` skips them even when named explicitly.
+`make syntax` must `py_compile` `bin/my-herdr`, `tests/mocks/herdr`, and `tests/mocks/opencode` by name: they have no `.py` extension, so `compileall` skips them even when named explicitly.
 
-All three files need their **executable bit** kept in git; the wrapper reports a non-executable
-`HERDR_BIN_PATH` as an error, but the tests spawn them directly.
+All three files need their **executable bit** kept in git; the wrapper reports a non-executable `HERDR_BIN_PATH` as an error, but the tests spawn them directly.
 
 ## File Editing Preference
 
-- Use dedicated file-editing tools (such as `apply_patch` or the IDE editing
-  tools) to create or modify files.
-- Do not use Python commands/scripts, shell redirection, or other scripting
-  workarounds for file edits unless the user explicitly requests or approves
-  that approach.
-- For bulk edits or very large files, Python may be appropriate. Explain why
-  it would help and obtain the user's approval before using it, unless that
-  approval has already been given for the task.
+- Use dedicated file-editing tools (such as `apply_patch` or the IDE editing tools) to create or modify files.
+- Do not use Python commands/scripts, shell redirection, or other scripting workarounds for file edits unless the user explicitly requests or approves that approach.
+- For bulk edits or very large files, Python may be appropriate. Explain why it would help and obtain the user's approval before using it, unless that approval has already been given for the task.
 
 ## Working rules
 
-- **Never `git commit` or `git push`.** Stage nothing unless asked. When a change is ready, propose a
-  commit message draft (Conventional Commits style, e.g. `feat: add pane-to-tab action`) and let the
-  user commit. For work tied to a plan, use its uppercase slug as the scope, for example
-  `feat(CFORK): support Codex sessions`; omit the scope for unrelated changes. See the
-  [commit message convention](docs/README.md#commit-messages).
-- **Don't touch the user's herdr setup without asking.** That covers `~/.config/herdr/config.toml`
-  (keybindings), `herdr plugin link/install/enable`, `herdr server reload-config`, and
-  creating/closing/moving real tabs or panes. Unit tests must use the mock, never a live herdr.
+- **Never `git commit` or `git push`.** Stage nothing unless asked. When a change is ready, propose a commit message draft (Conventional Commits style, e.g. `feat: add pane-to-tab action`) and let the user commit. For work tied to a plan, use its uppercase slug as the scope, for example `feat(CFORK): support Codex sessions`; omit the scope for unrelated changes. See the [commit message convention](docs/README.md#commit-messages).
+- **Don't touch the user's herdr setup without asking.** That covers `~/.config/herdr/config.toml` (keybindings), `herdr plugin link/install/enable`, `herdr server reload-config`, and creating/closing/moving real tabs or panes. Unit tests must use the mock, never a live herdr.
 - Manual smoke tests against the live herdr are done **with the user**, one action at a time.
-- Tick checkboxes in the relevant active plan as tasks complete; add discovered follow-ups there.
-  Keep its status and the documentation index in sync. Use the plan conventions in
-  [docs/README.md](docs/README.md); small, straightforward fixes do not require a plan.
-- **Documents state what is true now, not how it got there.** When a decision changes, rewrite the
-  entry so it reads as if it had always said that, and delete what it replaced. Don't add "changed
-  from X", "previously Y", "note: this used to be Z", or a revision log to active plans, `README.md`,
-  `AGENTS.md` or the research notes. Git already holds the history; a second copy in prose only goes
-  stale and contradicts the lines around it. Completed plans in `docs/plans/` are an exception:
-  preserve them as historical design records instead of rewriting them for later features.
-  `CHANGELOG.md` records user-visible releases, not the path the implementation took.
+- Tick checkboxes in the relevant active plan as tasks complete; add discovered follow-ups there. Keep its status and the documentation index in sync. Use the plan conventions in [docs/README.md](docs/README.md); small, straightforward fixes do not require a plan.
+- **Documents state what is true now, not how it got there.** When a decision changes, rewrite the entry so it reads as if it had always said that, and delete what it replaced. Don't add "changed from X", "previously Y", "note: this used to be Z", or a revision log to active plans, `README.md`, `AGENTS.md` or the research notes. Git already holds the history; a second copy in prose only goes stale and contradicts the lines around it. Completed plans in `docs/plans/` are an exception: preserve them as historical design records instead of rewriting them for later features. `CHANGELOG.md` records user-visible releases, not the path the implementation took.
 - Bump `version` in `herdr-plugin.toml` and add a `CHANGELOG.md` entry for every user-visible change.
 - **Don't hard-wrap Markdown prose to a fixed width.** Write each paragraph and list item as one line and let the editor wrap it. Break lines only where Markdown needs it: list items, table rows, headings, code blocks. Don't reflow existing paragraphs unless asked; when you rewrite one, write it as one line.
-- The repo is **public** (github.com/gysi/my-herdr). Never commit secrets, session ids, or personal
-  paths in examples. Use placeholders.
+- The repo is **public** (github.com/gysi/my-herdr). Never commit secrets, session ids, or personal paths in examples. Use placeholders.
 - Copied code from other plugins: MIT only, with a `# Adapted from <repo>/<path> (MIT)` comment.
