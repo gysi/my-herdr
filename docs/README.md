@@ -1,6 +1,11 @@
 # Development documentation
 
-Start with [AGENTS.md](../AGENTS.md) and the plan relevant to the requested task. The [project README](../README.md) and code describe current behavior. Active plans describe intended work; completed plans preserve the reasoning behind past development.
+Start with [AGENTS.md](../AGENTS.md) and the plan relevant to the requested task. The [project README](../README.md), the [action reference](actions.md), and code describe current behavior. Active plans describe intended work; completed plans preserve the reasoning behind past development.
+
+## User documentation
+
+- [Project README](../README.md): installation, action summaries, keybindings, requirements, and plugin logs.
+- [Action reference](actions.md): detailed behavior, agent-specific setup, and limitations.
 
 ## Local checks
 
@@ -49,7 +54,7 @@ None.
 - [Official herdr documentation](research/official-docs.md): the herdr 0.9.1 plugin contract and locally verified CLI behavior. If the live CLI disagrees, trust it and update the research.
 - [Community plugins](research/community-plugins.md): examples, patterns, and pitfalls; not the specification for this plugin.
 
-Both research notes identify their original snapshot date. Targeted corrections do not move that date; only a full re-survey or contract review does. Historical recommendations stay in the completed initial development plan; current plugin behavior belongs in the README and code.
+Both research notes identify their original snapshot date. Targeted corrections do not move that date; only a full re-survey or contract review does. Historical recommendations stay in the completed initial development plan; current plugin behavior belongs in the README, the action reference, and code.
 
 ## Plan conventions
 

@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- Detailed action documentation moved from the README to a new [action reference](docs/actions.md). The README keeps a summary table that links to each action's section.
+
 ## [0.6.0] - 2026-10-17
 
 ### Added

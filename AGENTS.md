@@ -58,14 +58,14 @@ tests/check_manifest.py offline manifest/registry agreement and module validatio
 mise.toml                pinned development tools (Ruff)
 ruff.toml                local Python and docstring lint rules
 Makefile                 check / lint / test / syntax / manifest / link / logs
-docs/                    README.md (index), plans/, research/
+docs/                    README.md (index), actions.md (action reference), plans/, research/
 ```
 
 Features import their own modules and `shared`, never another feature or the dispatcher. Shared modules do not depend on features. Keep package `__init__.py` files free of eager feature imports. Feature-specific helpers stay with their feature until reuse is needed.
 
 Forking uses one adapter registry in `myherdr/forking/agents.py`, with shared pane/session metadata checks there. `claude.py`, `codex.py`, and `opencode.py` own agent-specific guidance, validation/logging, preparation, launch arguments, and environment selection. Validation must not create forks; preparation may save an OpenCode fork before tab creation. Keep tab lifecycle and cleanup in `workflow.py`, without agent-kind branches or direct agent-module imports.
 
-**Adding an action** = feature module with `main(args)` + `entrypoints.py` registry entry + `[[actions]]` block + feature test + README row. Pane entrypoints use the `panes` registry and `[[panes]]`. `tests/check_manifest.py` checks agreement in both directions and module existence.
+**Adding an action** = feature module with `main(args)` + `entrypoints.py` registry entry + `[[actions]]` block + feature test + README row linking to a new section in `docs/actions.md`. Pane entrypoints use the `panes` registry and `[[panes]]`. `tests/check_manifest.py` checks agreement in both directions and module existence.
 
 ## Commands
 
